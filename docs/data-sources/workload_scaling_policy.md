@@ -3,12 +3,12 @@
 page_title: "castai_workload_scaling_policy Data Source - CAST AI"
 subcategory: ""
 description: |-
-  Fetches a single workload scaling policy by id or name, including system (read-only) policies. Returns the full policy definition, which can be used as a template for defining custom policies without keeping policy definitions as static code.
+  Fetches a single workload scaling policy by id or name, including system (read-only) policies. Returns the full policy definition, which can be used as a template for defining custom policies without keeping policy definitions as static code. Native HPA settings support RESOURCE metrics with UTILIZATION targets only; reading a policy with other HPA metrics or targets returns an error to avoid discarding configuration.
 ---
 
 # castai_workload_scaling_policy (Data Source)
 
-Fetches a single workload scaling policy by id or name, including system (read-only) policies. Returns the full policy definition, which can be used as a template for defining custom policies without keeping policy definitions as static code.
+Fetches a single workload scaling policy by id or name, including system (read-only) policies. Returns the full policy definition, which can be used as a template for defining custom policies without keeping policy definitions as static code. Native HPA settings support RESOURCE metrics with UTILIZATION targets only; reading a policy with other HPA metrics or targets returns an error to avoid discarding configuration.
 
 ## Example Usage
 
@@ -72,6 +72,7 @@ data "castai_workload_scaling_policy" "all" {
 - `downscaling` (List of Object) (see [below for nested schema](#nestedatt--downscaling))
 - `excluded_containers` (List of String) Defines containers to be excluded from receiving recommendations. The containers are matched by exact name.
 - `hpa_converters` (List of Object) Configuration for converting existing HPAs when VPA is the sole optimization. If HPA management is enabled, it takes precedence over this setting. (see [below for nested schema](#nestedatt--hpa_converters))
+- `hpa_settings` (List of Object) Configures native Kubernetes horizontal pod autoscaling for workloads using this policy. (see [below for nested schema](#nestedatt--hpa_settings))
 - `id` (String) The ID of this resource.
 - `is_castware` (Boolean) Whether this policy is managed by CAST AI and only applies to castware workloads.
 - `is_default` (Boolean) Whether this is the default scaling policy for the cluster.
@@ -261,6 +262,103 @@ Read-Only:
 Read-Only:
 
 - `type` (String)
+
+
+<a id="nestedatt--hpa_settings"></a>
+### Nested Schema for `hpa_settings`
+
+Read-Only:
+
+- `management_option` (String)
+- `native_hpa_spec` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec))
+- `take_ownership` (Boolean)
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec`
+
+Read-Only:
+
+- `behavior` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--behavior))
+- `max_replicas` (Number)
+- `metrics` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--metrics))
+- `min_replicas` (Number)
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--behavior"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.behavior`
+
+Read-Only:
+
+- `scale_down` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_down))
+- `scale_up` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_up))
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_down"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.behavior.scale_down`
+
+Read-Only:
+
+- `policies` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_down--policies))
+- `select_policy` (String)
+- `stabilization_window_seconds` (Number)
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_down--policies"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.behavior.scale_down.policies`
+
+Read-Only:
+
+- `period_seconds` (Number)
+- `type` (String)
+- `value` (Number)
+
+
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_up"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.behavior.scale_up`
+
+Read-Only:
+
+- `policies` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_up--policies))
+- `select_policy` (String)
+- `stabilization_window_seconds` (Number)
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--behavior--scale_up--policies"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.behavior.scale_up.policies`
+
+Read-Only:
+
+- `period_seconds` (Number)
+- `type` (String)
+- `value` (Number)
+
+
+
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--metrics"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.metrics`
+
+Read-Only:
+
+- `resource` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--metrics--resource))
+- `type` (String)
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--metrics--resource"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.metrics.resource`
+
+Read-Only:
+
+- `name` (String)
+- `target` (List of Object) (see [below for nested schema](#nestedobjatt--hpa_settings--native_hpa_spec--metrics--resource--target))
+
+<a id="nestedobjatt--hpa_settings--native_hpa_spec--metrics--resource--target"></a>
+### Nested Schema for `hpa_settings.native_hpa_spec.metrics.resource.target`
+
+Read-Only:
+
+- `type` (String)
+- `value` (String)
+
+
+
+
 
 
 <a id="nestedatt--jvm"></a>
