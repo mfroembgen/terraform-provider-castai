@@ -49,6 +49,7 @@ func TestRebalancingScheduleDataSourceRead(t *testing.T) {
                     "keepDrainTimeoutNodes": false,
                     "evictGracefully": false,
                     "aggressiveMode": false,
+                    "splitNodesInBatchesOf": 4,
                     "aggressiveModeConfig": {
                         "ignoreLocalPersistentVolumes": true,
                         "ignoreProblemJobPods": true,
@@ -136,17 +137,22 @@ launch_configuration.0.aggressive_mode_config.# = 1
 launch_configuration.0.aggressive_mode_config.0.ignore_local_persistent_volumes = true
 launch_configuration.0.aggressive_mode_config.0.ignore_problem_job_pods = true
 launch_configuration.0.aggressive_mode_config.0.ignore_problem_pods_without_controller = true
+launch_configuration.0.aggressive_mode_config.0.ignore_problem_prevented_drain_pods = false
 launch_configuration.0.aggressive_mode_config.0.ignore_problem_removal_disabled_pods = true
 launch_configuration.0.drain_failure_config.# = 0
+launch_configuration.0.evict_gracefully = false
 launch_configuration.0.execution_conditions.# = 1
 launch_configuration.0.execution_conditions.0.achieved_savings_percentage = 15
 launch_configuration.0.execution_conditions.0.enabled = true
 launch_configuration.0.keep_drain_timeout_nodes = false
+launch_configuration.0.max_simultaneous_drains = 0
 launch_configuration.0.node_ttl_seconds = 350
 launch_configuration.0.num_targeted_nodes = 20
 launch_configuration.0.rebalancing_min_nodes = 2
 launch_configuration.0.selector = 
+launch_configuration.0.split_nodes_in_batches_of = 4
 launch_configuration.0.target_node_selection_algorithm = TargetNodeSelectionAlgorithmNormalizedPrice
+launch_configuration.0.targeted_nodes_percentage = 0
 name = rebalancing schedule 1
 schedule.# = 1
 schedule.0.cron = 5 * * * * *

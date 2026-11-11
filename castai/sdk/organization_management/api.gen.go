@@ -21,6 +21,14 @@ const (
 	BatchCreateEnterpriseGroupsRequestMemberKindSUBJECTKINDUSER           BatchCreateEnterpriseGroupsRequestMemberKind = "SUBJECT_KIND_USER"
 )
 
+// Defines values for BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct.
+const (
+	BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProductPRODUCTTYPECASTAI      BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct = "PRODUCT_TYPE_CASTAI"
+	BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProductPRODUCTTYPEKIMCHI      BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct = "PRODUCT_TYPE_KIMCHI"
+	BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProductPRODUCTTYPEPLATFORM    BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct = "PRODUCT_TYPE_PLATFORM"
+	BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProductPRODUCTTYPEUNSPECIFIED BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct = "PRODUCT_TYPE_UNSPECIFIED"
+)
+
 // Defines values for BatchUpdateEnterpriseGroupsRequestMemberKind.
 const (
 	BatchUpdateEnterpriseGroupsRequestMemberKindSERVICEACCOUNT         BatchUpdateEnterpriseGroupsRequestMemberKind = "SERVICE_ACCOUNT"
@@ -44,11 +52,11 @@ const (
 
 // Defines values for GetEnterpriseGroupResponseSsoProvider.
 const (
-	SSOPROVIDEROIDC        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_OIDC"
-	SSOPROVIDEROKTA        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_OKTA"
-	SSOPROVIDERSAML        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_SAML"
-	SSOPROVIDERUNSPECIFIED GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_UNSPECIFIED"
-	SSOPROVIDERWAAD        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_WAAD"
+	GetEnterpriseGroupResponseSsoProviderSSOPROVIDEROIDC        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_OIDC"
+	GetEnterpriseGroupResponseSsoProviderSSOPROVIDEROKTA        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_OKTA"
+	GetEnterpriseGroupResponseSsoProviderSSOPROVIDERSAML        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_SAML"
+	GetEnterpriseGroupResponseSsoProviderSSOPROVIDERUNSPECIFIED GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_UNSPECIFIED"
+	GetEnterpriseGroupResponseSsoProviderSSOPROVIDERWAAD        GetEnterpriseGroupResponseSsoProvider = "SSO_PROVIDER_WAAD"
 )
 
 // Defines values for GroupDefinitionAuthorKind.
@@ -67,24 +75,24 @@ const (
 
 // Defines values for ListChildrenOrganizationsResponseChildOrganizationType.
 const (
-	ORGANIZATIONTYPECHILD       ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_CHILD"
-	ORGANIZATIONTYPEDEFAULT     ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_DEFAULT"
-	ORGANIZATIONTYPEENTERPRISE  ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_ENTERPRISE"
-	ORGANIZATIONTYPEUNSPECIFIED ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_UNSPECIFIED"
+	ListChildrenOrganizationsResponseChildOrganizationTypeORGANIZATIONTYPECHILD       ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_CHILD"
+	ListChildrenOrganizationsResponseChildOrganizationTypeORGANIZATIONTYPEDEFAULT     ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_DEFAULT"
+	ListChildrenOrganizationsResponseChildOrganizationTypeORGANIZATIONTYPEENTERPRISE  ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_ENTERPRISE"
+	ListChildrenOrganizationsResponseChildOrganizationTypeORGANIZATIONTYPEUNSPECIFIED ListChildrenOrganizationsResponseChildOrganizationType = "ORGANIZATION_TYPE_UNSPECIFIED"
 )
 
 // Defines values for RoleBindingRoleBindingStatusState.
 const (
-	POLICIESSTATEACCEPTED    RoleBindingRoleBindingStatusState = "POLICIES_STATE_ACCEPTED"
-	POLICIESSTATECREATED     RoleBindingRoleBindingStatusState = "POLICIES_STATE_CREATED"
-	POLICIESSTATEFAILED      RoleBindingRoleBindingStatusState = "POLICIES_STATE_FAILED"
-	POLICIESSTATEUNSPECIFIED RoleBindingRoleBindingStatusState = "POLICIES_STATE_UNSPECIFIED"
+	RoleBindingRoleBindingStatusStatePOLICIESSTATEACCEPTED    RoleBindingRoleBindingStatusState = "POLICIES_STATE_ACCEPTED"
+	RoleBindingRoleBindingStatusStatePOLICIESSTATECREATED     RoleBindingRoleBindingStatusState = "POLICIES_STATE_CREATED"
+	RoleBindingRoleBindingStatusStatePOLICIESSTATEFAILED      RoleBindingRoleBindingStatusState = "POLICIES_STATE_FAILED"
+	RoleBindingRoleBindingStatusStatePOLICIESSTATEUNSPECIFIED RoleBindingRoleBindingStatusState = "POLICIES_STATE_UNSPECIFIED"
 )
 
 // Defines values for RoleBindingScopeScope.
 const (
-	CLUSTER      RoleBindingScopeScope = "CLUSTER"
-	ORGANIZATION RoleBindingScopeScope = "ORGANIZATION"
+	RoleBindingScopeScopeCLUSTER      RoleBindingScopeScope = "CLUSTER"
+	RoleBindingScopeScopeORGANIZATION RoleBindingScopeScope = "ORGANIZATION"
 )
 
 // Defines values for EnterpriseAPIListGroupsParamsSortOrder.
@@ -105,17 +113,17 @@ const (
 
 // Defines values for EnterpriseAPIListMembersParamsStatus.
 const (
-	MEMBERSTATUSACTIVE        EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_ACTIVE"
-	MEMBERSTATUSALL           EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_ALL"
-	MEMBERSTATUSINVITEPENDING EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_INVITE_PENDING"
-	MEMBERSTATUSUNSPECIFIED   EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_UNSPECIFIED"
+	EnterpriseAPIListMembersParamsStatusMEMBERSTATUSACTIVE        EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_ACTIVE"
+	EnterpriseAPIListMembersParamsStatusMEMBERSTATUSALL           EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_ALL"
+	EnterpriseAPIListMembersParamsStatusMEMBERSTATUSINVITEPENDING EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_INVITE_PENDING"
+	EnterpriseAPIListMembersParamsStatusMEMBERSTATUSUNSPECIFIED   EnterpriseAPIListMembersParamsStatus = "MEMBER_STATUS_UNSPECIFIED"
 )
 
 // Defines values for EnterpriseAPIGetEnterpriseMemberParamsType.
 const (
-	GETENTERPRISEMEMBERTYPEINVITATION  EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_INVITATION"
-	GETENTERPRISEMEMBERTYPEUNSPECIFIED EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_UNSPECIFIED"
-	GETENTERPRISEMEMBERTYPEUSER        EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_USER"
+	EnterpriseAPIGetEnterpriseMemberParamsTypeGETENTERPRISEMEMBERTYPEINVITATION  EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_INVITATION"
+	EnterpriseAPIGetEnterpriseMemberParamsTypeGETENTERPRISEMEMBERTYPEUNSPECIFIED EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_UNSPECIFIED"
+	EnterpriseAPIGetEnterpriseMemberParamsTypeGETENTERPRISEMEMBERTYPEUSER        EnterpriseAPIGetEnterpriseMemberParamsType = "GET_ENTERPRISE_MEMBER_TYPE_USER"
 )
 
 // Defines values for EnterpriseAPIListChildrenOrganizationsParamsSortOrder.
@@ -317,7 +325,18 @@ type BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequest struct {
 
 	// OrganizationId Organization ID — must be the enterprise itself or a direct child (deleted_at IS NULL).
 	OrganizationId string `json:"organizationId"`
+
+	// Product Which product the service account belongs to (castai or kimchi).
+	//  Resolved primarily from the caller's context, defaulting to castai.
+	//  All or nothing across the batch: omit it on every item or set the same value on every item.
+	Product *BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct `json:"product,omitempty"`
 }
+
+// BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct Which product the service account belongs to (castai or kimchi).
+//
+//	Resolved primarily from the caller's context, defaulting to castai.
+//	All or nothing across the batch: omit it on every item or set the same value on every item.
+type BatchCreateEnterpriseServiceAccountsRequestServiceAccountRequestProduct string
 
 // BatchCreateEnterpriseServiceAccountsResponse Response message for batch creating service accounts in an enterprise.
 type BatchCreateEnterpriseServiceAccountsResponse struct {
@@ -907,6 +926,9 @@ type ListEnterpriseServiceAccountsResponseServiceAccount struct {
 
 	// Id ID is the unique identifier of the service account.
 	Id *string `json:"id,omitempty"`
+
+	// KeysCount KeysCount is the number of keys for this service account.
+	KeysCount *uint32 `json:"keysCount,omitempty"`
 
 	// ManagedBy Method used to create the service account, e.g.: console, terraform.
 	ManagedBy *string `json:"managedBy,omitempty"`
@@ -1511,6 +1533,9 @@ type EnterpriseAPIListEnterpriseServiceAccountsParams struct {
 
 	// SortOrder The order of returned items. Default is ASC.
 	SortOrder *EnterpriseAPIListEnterpriseServiceAccountsParamsSortOrder `form:"sort.order,omitempty" json:"sort.order,omitempty"`
+
+	// Name Filter by name. Performs case-insensitive partial matching.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
 }
 
 // EnterpriseAPIListEnterpriseServiceAccountsParamsSortOrder defines parameters for EnterpriseAPIListEnterpriseServiceAccounts.

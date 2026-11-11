@@ -156,7 +156,7 @@ func TestAutoscalerResource_PoliciesUpdateAction(t *testing.T) {
 
 	mockClient.EXPECT().PoliciesAPIGetClusterPolicies(gomock.Any(), clusterId, gomock.Any()).Return(response, nil).Times(1)
 	mockClient.EXPECT().PoliciesAPIUpsertClusterPoliciesWithBody(gomock.Any(), clusterId, "application/json", gomock.Any()).
-		DoAndReturn(func(ctx context.Context, clusterId string, contentType string, body io.Reader) (*http.Response, error) {
+		DoAndReturn(func(ctx context.Context, clusterId string, contentType string, body io.Reader, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 			got, _ := io.ReadAll(body)
 			expected := []byte(updatedPolicies)
 
@@ -255,7 +255,7 @@ func TestAutoscalerResource_PoliciesUpdateAction_Fail(t *testing.T) {
 
 	mockClient.EXPECT().PoliciesAPIGetClusterPolicies(gomock.Any(), clusterId, gomock.Any()).Return(response, nil).Times(1)
 	mockClient.EXPECT().PoliciesAPIUpsertClusterPoliciesWithBody(gomock.Any(), clusterId, "application/json", gomock.Any()).
-		DoAndReturn(func(ctx context.Context, clusterId string, contentType string, body io.Reader) (*http.Response, error) {
+		DoAndReturn(func(ctx context.Context, clusterId string, contentType string, body io.Reader, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: 400,
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"message":"policies config: Evictor policy management is not allowed: Evictor installed externally. Uninstall Evictor first and try again.","fieldViolations":[]`))),
@@ -852,7 +852,7 @@ func TestAutoscalerResource_GetChangePolicies_ComparePolicyJsonAndDef(t *testing
 				PoliciesAPIGetClusterPolicies(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(2).
 				DoAndReturn(
-					func(_ context.Context, _ string) (*http.Response, error) {
+					func(_ context.Context, _ string, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 						return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(current))}, nil
 					},
 				)
@@ -934,7 +934,7 @@ func TestAutoscalerResource_GetChangePolicies_AdjustPolicyForDrift(t *testing.T)
 		PoliciesAPIGetClusterPolicies(gomock.Any(), gomock.Any(), gomock.Any()).
 		Times(1).
 		DoAndReturn(
-			func(_ context.Context, _ string) (*http.Response, error) {
+			func(_ context.Context, _ string, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(policyJSON))}, nil
 			},
 		)
@@ -995,6 +995,154 @@ func TestAutoscalerResource_GetChangePolicies_AdjustPolicyForDrift(t *testing.T)
 	r.Equal(string(expectedPolicyJSON), string(result))
 }
 
+func TestAutoscalerResource_UpdateAutoscalerPolicies_RetriesOnVersionConflict(t *testing.T) {
+	r := require.New(t)
+	mockCtrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockCtrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	currentPolicies := `{"enabled":true,"unschedulablePods":{"enabled":true}}`
+	policyChanges := `{"enabled":true}`
+
+	res := resourceAutoscaler()
+	clusterId := "cluster_id"
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldAutoscalerPoliciesJSON: cty.StringVal(policyChanges),
+		FieldClusterId:              cty.StringVal(clusterId),
+	})
+	state := terraform.NewInstanceStateShimmedFromValue(val, 0)
+	data := res.Data(state)
+
+	conflictBody := `{"message":"node template has changed; please refetch the policies"}`
+	okBody := `{}`
+
+	// Each Get call needs a fresh body because the reader is consumed.
+	getCalls := 0
+	mockClient.EXPECT().
+		PoliciesAPIGetClusterPolicies(gomock.Any(), clusterId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			getCalls++
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(bytes.NewReader([]byte(currentPolicies))),
+			}, nil
+		}).Times(5)
+
+	// 4 conflicts then success => 5 total attempts.
+	mockClient.EXPECT().
+		PoliciesAPIUpsertClusterPoliciesWithBody(gomock.Any(), clusterId, "application/json", gomock.Any()).
+		Times(4).
+		DoAndReturn(func(_ context.Context, _ string, _ string, _ io.Reader, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 500,
+				Body:       io.NopCloser(bytes.NewReader([]byte(conflictBody))),
+			}, nil
+		})
+
+	mockClient.EXPECT().
+		PoliciesAPIUpsertClusterPoliciesWithBody(gomock.Any(), clusterId, "application/json", gomock.Any()).
+		Times(1).
+		DoAndReturn(func(_ context.Context, _ string, _ string, _ io.Reader, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(bytes.NewReader([]byte(okBody))),
+			}, nil
+		})
+
+	err := updateAutoscalerPolicies(ctx, data, provider)
+	r.NoError(err)
+	r.Equal(5, getCalls)
+}
+
+func TestAutoscalerResource_UpdateAutoscalerPolicies_NonRetryableError(t *testing.T) {
+	r := require.New(t)
+	mockCtrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockCtrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	currentPolicies := `{"enabled":true}`
+	policyChanges := `{"enabled":true}`
+
+	res := resourceAutoscaler()
+	clusterId := "cluster_id"
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldAutoscalerPoliciesJSON: cty.StringVal(policyChanges),
+		FieldClusterId:              cty.StringVal(clusterId),
+	})
+	state := terraform.NewInstanceStateShimmedFromValue(val, 0)
+	data := res.Data(state)
+
+	mockClient.EXPECT().
+		PoliciesAPIGetClusterPolicies(gomock.Any(), clusterId, gomock.Any()).
+		Return(&http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(currentPolicies)))}, nil).
+		Times(1)
+
+	// Non-retryable error (HTTP 400 with non-conflict message) should NOT be retried.
+	mockClient.EXPECT().
+		PoliciesAPIUpsertClusterPoliciesWithBody(gomock.Any(), clusterId, "application/json", gomock.Any()).
+		Times(1).
+		DoAndReturn(func(_ context.Context, _ string, _ string, _ io.Reader, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 400,
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"message":"invalid request"}`))),
+			}, nil
+		})
+
+	err := updateAutoscalerPolicies(ctx, data, provider)
+	r.Error(err)
+	r.Contains(err.Error(), "status=400")
+}
+
+func TestAutoscalerResource_UpdateAutoscalerPolicies_ContextCanceledWrapsTimeoutMessage(t *testing.T) {
+	r := require.New(t)
+	mockCtrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockCtrl)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	policyChanges := `{"enabled":true}`
+
+	res := resourceAutoscaler()
+	clusterId := "cluster_id"
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldAutoscalerPoliciesJSON: cty.StringVal(policyChanges),
+		FieldClusterId:              cty.StringVal(clusterId),
+	})
+	state := terraform.NewInstanceStateShimmedFromValue(val, 0)
+	data := res.Data(state)
+
+	// When the Get call itself fails because the context was cancelled,
+	// updatePolicies() returns a non-retryable error wrapped with the context error.
+	// The implementation detects context cancellation/deadline-exceeded and wraps
+	// the error with the timeout message, which preserves the original behavior.
+	mockClient.EXPECT().
+		PoliciesAPIGetClusterPolicies(gomock.Any(), clusterId, gomock.Any()).
+		Return(nil, context.Canceled).
+		AnyTimes()
+
+	err := updateAutoscalerPolicies(ctx, data, provider)
+	r.Error(err)
+	r.Contains(err.Error(), "timeout waiting for autoscaler policy update after version conflicts")
+}
+
 func JSONBytesEqual(a, b []byte) (bool, error) {
 	var j, j2 interface{}
 	if err := json.Unmarshal(a, &j); err != nil {
@@ -1008,7 +1156,7 @@ func JSONBytesEqual(a, b []byte) (bool, error) {
 
 func TestAccEKS_ResourceAutoscaler_basic(t *testing.T) {
 	rName := fmt.Sprintf("%v-autoscaler-%v", ResourcePrefix, acctest.RandString(8))
-	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "cost-terraform")
+	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "core-tf-acc-21-08-2025")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },

@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/castai/terraform-provider-castai/castai/sdk/omni"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/castai/terraform-provider-castai/castai/sdk/omni"
 )
 
 var (
@@ -26,18 +27,20 @@ type edgeConfigurationDataSource struct {
 
 // edgeConfigurationSingleDataModel describes a single edge configuration data source.
 type edgeConfigurationSingleDataModel struct {
-	ID             types.String           `tfsdk:"id"`
-	OrganizationID types.String           `tfsdk:"organization_id"`
-	ClusterID      types.String           `tfsdk:"cluster_id"`
-	EdgeLocationID types.String           `tfsdk:"edge_location_id"`
-	Name           types.String           `tfsdk:"name"`
-	Default        types.Bool             `tfsdk:"default"`
-	UserDataBase64 types.String           `tfsdk:"user_data_base64"`
-	Aws            *awsConfigurationModel `tfsdk:"aws"`
-	Gcp            *gcpConfigurationModel `tfsdk:"gcp"`
-	Oci            *ociConfigurationModel `tfsdk:"oci"`
-	Custom         types.Map              `tfsdk:"custom"`
-	CRI            *criConfigurationModel `tfsdk:"cri"`
+	ID             types.String              `tfsdk:"id"`
+	OrganizationID types.String              `tfsdk:"organization_id"`
+	ClusterID      types.String              `tfsdk:"cluster_id"`
+	EdgeLocationID types.String              `tfsdk:"edge_location_id"`
+	Name           types.String              `tfsdk:"name"`
+	Default        types.Bool                `tfsdk:"default"`
+	UserDataBase64 types.String              `tfsdk:"user_data_base64"`
+	SSHPublicKey   types.String              `tfsdk:"ssh_public_key"`
+	Aws            *awsConfigurationModel    `tfsdk:"aws"`
+	Gcp            *gcpConfigurationModel    `tfsdk:"gcp"`
+	Oci            *ociConfigurationModel    `tfsdk:"oci"`
+	Nebius         *nebiusConfigurationModel `tfsdk:"nebius"`
+	Custom         types.Map                 `tfsdk:"custom"`
+	CRI            *criConfigurationModel    `tfsdk:"cri"`
 }
 
 // findEdgeConfigurationByName searches for an edge configuration by name in the list response.
@@ -95,6 +98,10 @@ func (d *edgeConfigurationDataSource) Schema(_ context.Context, _ datasource.Sch
 			"user_data_base64": schema.StringAttribute{
 				Computed:    true,
 				Description: "Base64 encoded user data for edge bootstrap",
+			},
+			"ssh_public_key": schema.StringAttribute{
+				Computed:    true,
+				Description: "Base64 encoded SSH public key for provisioned nodes",
 			},
 			"aws": schema.SingleNestedAttribute{
 				Computed:    true,
@@ -157,6 +164,34 @@ func (d *edgeConfigurationDataSource) Schema(_ context.Context, _ datasource.Sch
 				Computed:    true,
 				Description: "Custom cloud specific configuration tags",
 				ElementType: types.StringType,
+			},
+			"nebius": schema.SingleNestedAttribute{
+				Computed:    true,
+				Description: "Nebius specific configuration",
+				Attributes: map[string]schema.Attribute{
+					"image_id": schema.StringAttribute{
+						Computed:    true,
+						Description: "Nebius image ID or name filter for edge creation",
+					},
+					"boot_disk_size_gib": schema.Int64Attribute{
+						Computed:    true,
+						Description: "Boot disk size in GiB",
+					},
+					"labels": schema.MapAttribute{
+						Computed:    true,
+						Description: "Instance/VM labels",
+						ElementType: types.StringType,
+					},
+					"reservation_ids": schema.ListAttribute{
+						Computed:    true,
+						ElementType: types.StringType,
+						Description: "Capacity block reservation IDs",
+					},
+					"gpu_cluster": schema.StringAttribute{
+						Computed:    true,
+						Description: "GPU cluster info",
+					},
+				},
 			},
 			"cri": schema.SingleNestedAttribute{
 				Computed:    true,
@@ -247,6 +282,7 @@ func (d *edgeConfigurationDataSource) Read(ctx context.Context, req datasource.R
 		data.Default = types.BoolValue(*config.Default)
 	}
 	data.UserDataBase64 = normalizeStringPtr(config.UserDataBase64)
+	data.SSHPublicKey = normalizeStringPtr(config.SshPublicKey)
 
 	if config.Cri != nil {
 		data.CRI = &criConfigurationModel{
@@ -294,6 +330,28 @@ func (d *edgeConfigurationDataSource) Read(ctx context.Context, req datasource.R
 		}
 		if config.Oci.Tags != nil && len(*config.Oci.Tags) > 0 {
 			data.Oci.Tags, diags = types.MapValueFrom(ctx, types.StringType, *config.Oci.Tags)
+		}
+	}
+
+	if config.Nebius != nil {
+		data.Nebius = &nebiusConfigurationModel{
+			ImageID:         types.StringPointerValue(config.Nebius.ImageId),
+			BootDiskSizeGiB: types.Int64Null(),
+			Labels:          types.MapNull(types.StringType),
+			ReservationIDs:  types.ListNull(types.StringType),
+			GpuCluster:      types.StringNull(),
+		}
+		if config.Nebius.BootDiskSizeGib != nil {
+			data.Nebius.BootDiskSizeGiB = types.Int64Value(int64(*config.Nebius.BootDiskSizeGib))
+		}
+		if config.Nebius.Labels != nil && len(*config.Nebius.Labels) > 0 {
+			data.Nebius.Labels, diags = types.MapValueFrom(ctx, types.StringType, *config.Nebius.Labels)
+		}
+		if config.Nebius.ReservationIds != nil && len(*config.Nebius.ReservationIds) > 0 {
+			data.Nebius.ReservationIDs, diags = types.ListValueFrom(ctx, types.StringType, *config.Nebius.ReservationIds)
+		}
+		if config.Nebius.GpuCluster != nil && *config.Nebius.GpuCluster != "" {
+			data.Nebius.GpuCluster = types.StringValue(*config.Nebius.GpuCluster)
 		}
 	}
 

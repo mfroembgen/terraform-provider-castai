@@ -16,10 +16,11 @@ const (
 
 // Defines values for ClusterProviderType.
 const (
-	AKS                     ClusterProviderType = "AKS"
-	EKS                     ClusterProviderType = "EKS"
-	GKE                     ClusterProviderType = "GKE"
-	PROVIDERTYPEUNSPECIFIED ClusterProviderType = "PROVIDER_TYPE_UNSPECIFIED"
+	ClusterProviderTypeAKS                     ClusterProviderType = "AKS"
+	ClusterProviderTypeANYWHERE                ClusterProviderType = "ANYWHERE"
+	ClusterProviderTypeEKS                     ClusterProviderType = "EKS"
+	ClusterProviderTypeGKE                     ClusterProviderType = "GKE"
+	ClusterProviderTypePROVIDERTYPEUNSPECIFIED ClusterProviderType = "PROVIDER_TYPE_UNSPECIFIED"
 )
 
 // Defines values for ClusterState.
@@ -34,24 +35,34 @@ const (
 
 // Defines values for EdgeClusterCNIOverlay.
 const (
-	OVERLAYFULL        EdgeClusterCNIOverlay = "OVERLAY_FULL"
-	OVERLAYOFF         EdgeClusterCNIOverlay = "OVERLAY_OFF"
-	OVERLAYSUBNET      EdgeClusterCNIOverlay = "OVERLAY_SUBNET"
-	OVERLAYUNSPECIFIED EdgeClusterCNIOverlay = "OVERLAY_UNSPECIFIED"
+	EdgeClusterCNIOverlayOVERLAYFULL        EdgeClusterCNIOverlay = "OVERLAY_FULL"
+	EdgeClusterCNIOverlayOVERLAYOFF         EdgeClusterCNIOverlay = "OVERLAY_OFF"
+	EdgeClusterCNIOverlayOVERLAYSUBNET      EdgeClusterCNIOverlay = "OVERLAY_SUBNET"
+	EdgeClusterCNIOverlayOVERLAYUNSPECIFIED EdgeClusterCNIOverlay = "OVERLAY_UNSPECIFIED"
 )
 
 // Defines values for EdgeClusterCNIOverlayEncap.
 const (
-	OVERLAYENCAPFOU         EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_FOU"
-	OVERLAYENCAPIPIP        EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_IPIP"
-	OVERLAYENCAPUNSPECIFIED EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_UNSPECIFIED"
+	EdgeClusterCNIOverlayEncapOVERLAYENCAPFOU         EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_FOU"
+	EdgeClusterCNIOverlayEncapOVERLAYENCAPIPIP        EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_IPIP"
+	EdgeClusterCNIOverlayEncapOVERLAYENCAPUNSPECIFIED EdgeClusterCNIOverlayEncap = "OVERLAY_ENCAP_UNSPECIFIED"
+)
+
+// Defines values for EdgeLocationCloudProviderType.
+const (
+	EdgeLocationCloudProviderTypeAWS                          EdgeLocationCloudProviderType = "AWS"
+	EdgeLocationCloudProviderTypeCLOUDPROVIDERTYPEUNSPECIFIED EdgeLocationCloudProviderType = "CLOUD_PROVIDER_TYPE_UNSPECIFIED"
+	EdgeLocationCloudProviderTypeCUSTOM                       EdgeLocationCloudProviderType = "CUSTOM"
+	EdgeLocationCloudProviderTypeGCP                          EdgeLocationCloudProviderType = "GCP"
+	EdgeLocationCloudProviderTypeNEBIUS                       EdgeLocationCloudProviderType = "NEBIUS"
+	EdgeLocationCloudProviderTypeOCI                          EdgeLocationCloudProviderType = "OCI"
 )
 
 // Defines values for EdgeLocationControlPlaneMode.
 const (
-	CONTROLPLANEMODEUNSPECIFIED EdgeLocationControlPlaneMode = "CONTROL_PLANE_MODE_UNSPECIFIED"
-	DEDICATED                   EdgeLocationControlPlaneMode = "DEDICATED"
-	SHARED                      EdgeLocationControlPlaneMode = "SHARED"
+	EdgeLocationControlPlaneModeCONTROLPLANEMODEUNSPECIFIED EdgeLocationControlPlaneMode = "CONTROL_PLANE_MODE_UNSPECIFIED"
+	EdgeLocationControlPlaneModeDEDICATED                   EdgeLocationControlPlaneMode = "DEDICATED"
+	EdgeLocationControlPlaneModeSHARED                      EdgeLocationControlPlaneMode = "SHARED"
 )
 
 // Defines values for EdgeLocationState.
@@ -67,21 +78,30 @@ const (
 
 // Defines values for KubernetesTaintEffect.
 const (
-	NOEXECUTE              KubernetesTaintEffect = "NO_EXECUTE"
-	NOSCHEDULE             KubernetesTaintEffect = "NO_SCHEDULE"
-	PREFERNOSCHEDULE       KubernetesTaintEffect = "PREFER_NO_SCHEDULE"
-	TAINTEFFECTUNSPECIFIED KubernetesTaintEffect = "TAINT_EFFECT_UNSPECIFIED"
+	KubernetesTaintEffectNOEXECUTE              KubernetesTaintEffect = "NO_EXECUTE"
+	KubernetesTaintEffectNOSCHEDULE             KubernetesTaintEffect = "NO_SCHEDULE"
+	KubernetesTaintEffectPREFERNOSCHEDULE       KubernetesTaintEffect = "PREFER_NO_SCHEDULE"
+	KubernetesTaintEffectTAINTEFFECTUNSPECIFIED KubernetesTaintEffect = "TAINT_EFFECT_UNSPECIFIED"
 )
 
 // Defines values for ObjectStatusPhase.
 const (
-	CREATING         ObjectStatusPhase = "CREATING"
-	DELETED          ObjectStatusPhase = "DELETED"
-	DELETING         ObjectStatusPhase = "DELETING"
-	FAILED           ObjectStatusPhase = "FAILED"
-	PHASEUNSPECIFIED ObjectStatusPhase = "PHASE_UNSPECIFIED"
-	READY            ObjectStatusPhase = "READY"
-	UNKNOWN          ObjectStatusPhase = "UNKNOWN"
+	ObjectStatusPhaseCREATING         ObjectStatusPhase = "CREATING"
+	ObjectStatusPhaseDELETED          ObjectStatusPhase = "DELETED"
+	ObjectStatusPhaseDELETING         ObjectStatusPhase = "DELETING"
+	ObjectStatusPhaseFAILED           ObjectStatusPhase = "FAILED"
+	ObjectStatusPhasePHASEUNSPECIFIED ObjectStatusPhase = "PHASE_UNSPECIFIED"
+	ObjectStatusPhaseREADY            ObjectStatusPhase = "READY"
+	ObjectStatusPhaseUNKNOWN          ObjectStatusPhase = "UNKNOWN"
+)
+
+// Defines values for OmniAgentContextProvider.
+const (
+	OmniAgentContextProviderAKS                     OmniAgentContextProvider = "AKS"
+	OmniAgentContextProviderANYWHERE                OmniAgentContextProvider = "ANYWHERE"
+	OmniAgentContextProviderEKS                     OmniAgentContextProvider = "EKS"
+	OmniAgentContextProviderGKE                     OmniAgentContextProvider = "GKE"
+	OmniAgentContextProviderPROVIDERTYPEUNSPECIFIED OmniAgentContextProvider = "PROVIDER_TYPE_UNSPECIFIED"
 )
 
 // AWSConfiguration AWS specific parameters present in edge configuration.
@@ -235,8 +255,14 @@ type CustomProviderParam = map[string]interface{}
 
 // EdgeClusterAddon EdgeClusterAddon configures a single optional addon installed on the edge cluster.
 type EdgeClusterAddon struct {
+	// Message Human-readable description of the addon's current status.
+	Message *string `json:"message,omitempty"`
+
 	// Name The addon identifier. Must match one of the supported optional addons.
 	Name string `json:"name"`
+
+	// Ready Whether the addon is fully installed and ready.
+	Ready *bool `json:"ready,omitempty"`
 
 	// Values Helm values for the addon, deep-merged over the chart's default values.
 	Values *map[string]interface{} `json:"values,omitempty"`
@@ -272,12 +298,20 @@ type EdgeClusterControlPlane struct {
 	// KonnectivityPort KonnectivityPort is the port used for konnectivity server.
 	KonnectivityPort *int32 `json:"konnectivityPort,omitempty"`
 
+	// KubernetesVersion KubernetesVersion is edge location cluster control plane version (effectively it is k0s version for example 'v1.36.3+k0s.0');
+	//  if not provided then a default one will be used depending on installed omni agent version.
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+
 	// ServiceAnnotations ServiceAnnotations are custom annotations to apply to the control plane service.
 	ServiceAnnotations *map[string]string `json:"serviceAnnotations,omitempty"`
 }
 
 // EdgeClusterLiqoSpec EdgeClusterLiqoSpec contains configuration overrides for liqo.
 type EdgeClusterLiqoSpec struct {
+	// GatewayReplicas GatewayReplicas is the number of active replicas for the Liqo gateway servers and clients.
+	//  Defaults to 1 when unset.
+	GatewayReplicas *int32 `json:"gatewayReplicas,omitempty"`
+
 	// GatewayServer GatewayServerConfig contains overrides for the Gateway server.
 	GatewayServer *GatewayServerConfig `json:"gatewayServer,omitempty"`
 }
@@ -355,8 +389,15 @@ type EdgeConfiguration struct {
 	// Name The name of the edge configuration.
 	Name string `json:"name"`
 
+	// Nebius Nebius specific configuration.
+	Nebius *NebiusConfiguration `json:"nebius,omitempty"`
+
 	// Oci OCI specific configuration.
 	Oci *OCIConfiguration `json:"oci,omitempty"`
+
+	// SshPublicKey Base64 encoded ssh public key to be used for provisioned nodes.
+	//  Example how to encode public key: cat ~/.ssh/id_ed25519.pub | base64 | tr -d '\n'
+	SshPublicKey *string `json:"sshPublicKey,omitempty"`
 
 	// UpdateTime The last update timestamp.
 	UpdateTime *time.Time `json:"updateTime,omitempty"`
@@ -417,8 +458,14 @@ type EdgeConfigurationUpdate struct {
 	// Name The name of the edge configuration.
 	Name *string `json:"name,omitempty"`
 
+	// Nebius Nebius specific configuration.
+	Nebius *NebiusConfiguration `json:"nebius,omitempty"`
+
 	// Oci OCI specific configuration.
 	Oci *OCIConfiguration `json:"oci,omitempty"`
+
+	// SshPublicKey Base64 encoded ssh public key to be used for provisioned nodes.
+	SshPublicKey *string `json:"sshPublicKey,omitempty"`
 
 	// UserDataBase64 Base64 encoded user data to run on the edge as part of bootstrap. The payload
 	//  must start with either `#cloud-config` (cloud-init YAML) or `#!` (shell
@@ -482,6 +529,9 @@ type EdgeLocation struct {
 	// Aws AWS specific parameters.
 	Aws *AWSParam `json:"aws,omitempty"`
 
+	// CloudProviderType The cloud provider type of the edge location.
+	CloudProviderType *EdgeLocationCloudProviderType `json:"cloudProviderType,omitempty"`
+
 	// CloudResourceId Name used to create/tag cloud resources.
 	CloudResourceId *string `json:"cloudResourceId,omitempty"`
 
@@ -517,6 +567,9 @@ type EdgeLocation struct {
 	//  and GCP has a limit of 30 characters for service account names.
 	Name string `json:"name"`
 
+	// Nebius Nebius cloud parameters.
+	Nebius *NebiusParam `json:"nebius,omitempty"`
+
 	// Oci OCI cloud parameters.
 	Oci *OCIParam `json:"oci,omitempty"`
 
@@ -535,6 +588,9 @@ type EdgeLocation struct {
 	// Zones The zones of edge location.
 	Zones *[]Zone `json:"zones,omitempty"`
 }
+
+// EdgeLocationCloudProviderType The cloud provider type of the edge location.
+type EdgeLocationCloudProviderType string
 
 // EdgeLocationControlPlaneMode The mode of control plane inside edge location.
 type EdgeLocationControlPlaneMode string
@@ -559,11 +615,36 @@ type EdgeLocationUpdate struct {
 	// Gcp Google Cloud specific parameters.
 	Gcp *GCPParam `json:"gcp,omitempty"`
 
+	// Nebius Nebius specific parameters.
+	Nebius *NebiusParam `json:"nebius,omitempty"`
+
 	// Oci OCI specific parameters.
 	Oci *OCIParam `json:"oci,omitempty"`
 
 	// Zones The zones of edge location.
 	Zones *[]Zone `json:"zones,omitempty"`
+}
+
+// EdgeLocationAddonStatus AddonStatus represents the readiness status of a single addon.
+type EdgeLocationAddonStatus struct {
+	// Message Message explaining why the addon is not ready, if applicable.
+	Message *string `json:"message,omitempty"`
+
+	// Name The name of the addon.
+	Name *string `json:"name,omitempty"`
+
+	// Ready Whether the addon is ready.
+	Ready *bool `json:"ready,omitempty"`
+}
+
+// FilesystemAttachment Attachment of an existing Nebius shared filesystem to an edge VM.
+type FilesystemAttachment struct {
+	// FilesystemId ID of an existing Nebius shared filesystem.
+	//  Example: computefilesystem-e00yt3n68egnzr50nz
+	FilesystemId string `json:"filesystemId"`
+
+	// MountPath Mount path inside the VM.
+	MountPath string `json:"mountPath"`
 }
 
 // GCPConfiguration GCP specific parameters present in edge configuration.
@@ -630,6 +711,11 @@ type GCPParamGCPNetworking struct {
 type GPUConfig struct {
 	// Count Number of GPUs.
 	Count *uint32 `json:"count,omitempty"`
+
+	// DraEnabled DraEnabled enables Dynamic Resource Allocation (DRA).
+	//  When enabled, the device plugin is disabled and GPU resources
+	//  are advertised via K8s ResourceSlices for allocation through K8s ResourceClaims.
+	DraEnabled *bool `json:"draEnabled,omitempty"`
 
 	// Mig MIG configuration for the GPU.
 	Mig *GPUConfigMigConfig `json:"mig,omitempty"`
@@ -733,6 +819,54 @@ type ListEdgeLocationsResponse struct {
 	TotalCount *int32 `json:"totalCount,omitempty"`
 }
 
+// NebiusConfiguration Nebius specific parameters present in edge configuration.
+type NebiusConfiguration struct {
+	// BootDiskSizeGib Boot disk size.
+	BootDiskSizeGib *int32 `json:"bootDiskSizeGib,omitempty"`
+
+	// Filesystems Shared filesystems to attach to each VM created from this configuration.
+	Filesystems *[]FilesystemAttachment `json:"filesystems,omitempty"`
+
+	// GpuCluster GPU cluster info
+	GpuCluster *string `json:"gpuCluster,omitempty"`
+
+	// ImageId ImageID to be used for edge creation.
+	ImageId *string `json:"imageId,omitempty"`
+
+	// Labels Instance/VM labels.
+	Labels *map[string]string `json:"labels,omitempty"`
+
+	// ReservationIds Capacity block reservation ids.
+	ReservationIds *[]string `json:"reservationIds,omitempty"`
+}
+
+// NebiusParam Nebius cloud provider params.
+type NebiusParam struct {
+	// Networking The networking configuration details.
+	Networking *NebiusParamNetworking `json:"networking,omitempty"`
+
+	// ParentId The parent ID (project ID) that owns the edge location resources.
+	ParentId *string `json:"parentId,omitempty"`
+
+	// ServiceAccountId The Nebius service account ID which has a trust established with CAST AI identity.
+	ServiceAccountId *string `json:"serviceAccountId,omitempty"`
+}
+
+// NebiusParamNetworking NebiusParamNetworking Networking configuration of Nebius edge location.
+type NebiusParamNetworking struct {
+	// NetworkId The network ID of the VPC network to be used in the selected region.
+	NetworkId *string `json:"networkId,omitempty"`
+
+	// SecurityGroupId The security group ID to be used in the selected region.
+	SecurityGroupId *string `json:"securityGroupId,omitempty"`
+
+	// SubnetCidr The subnet CIDR used for allocating IP's inside the subnet.
+	SubnetCidr *string `json:"subnetCidr,omitempty"`
+
+	// SubnetId The subnet ID of the subnet to be used in the selected region.
+	SubnetId *string `json:"subnetId,omitempty"`
+}
+
 // OCIConfiguration OCI specific parameters present in edge configuration.
 type OCIConfiguration struct {
 	// BootDiskSizeGib Boot disk size.
@@ -794,6 +928,9 @@ type OCIParamNetworking struct {
 
 	// VcnId OCI virtual cloud network id of edge location.
 	VcnId string `json:"vcnId"`
+
+	// VcnPeered Whether existing VCN is peered with main cluster's network. Field is ignored if vcn_id is not provided or main cluster does not support internal load balancers.
+	VcnPeered *bool `json:"vcnPeered,omitempty"`
 }
 
 // ObjectStatus ObjectStatus of the object.
@@ -816,6 +953,48 @@ type OffboardEdgeLocationResponse struct {
 	// Script The script to be executed to offboard the cluster.
 	Script *string `json:"script,omitempty"`
 }
+
+// OmniAgentContext Cluster context used to render the omni-agent helm values. Sent by castctl
+//
+//	when onboarding a cluster; the server renders the final values overrides from it.
+type OmniAgentContext struct {
+	// ApiServerUri The URI of the cluster API server.
+	//  API server to remote peers.
+	ApiServerUri string `json:"apiServerUri"`
+
+	// ClusterId The ID of the Cluster to be onboarded.
+	ClusterId string `json:"clusterId"`
+
+	// ClusterName Name of the Cluster.
+	ClusterName string `json:"clusterName"`
+
+	// DataPathProvider CNI/networking provider (e.g calico, cilium).
+	DataPathProvider *string `json:"dataPathProvider,omitempty"`
+
+	// LoadBalancerProvider The load balancer provider to use for omni-agent services.
+	LoadBalancerProvider *string `json:"loadBalancerProvider,omitempty"`
+
+	// NodeCidrs The node CIDRs of the cluster (e.g. node subnet CIDRs).
+	NodeCidrs *[]string `json:"nodeCidrs,omitempty"`
+
+	// OrganizationId The ID of the Organization.
+	OrganizationId string `json:"organizationId"`
+
+	// PodCidrs The pod CIDRs of the cluster.
+	PodCidrs []string `json:"podCidrs"`
+
+	// Provider The type of the cluster provider.
+	Provider OmniAgentContextProvider `json:"provider"`
+
+	// ServiceCidr The service CIDR of the cluster.
+	ServiceCidr string `json:"serviceCidr"`
+
+	// StorageProvider The storage provider (storage class) to use for omni-agent volumes.
+	StorageProvider *string `json:"storageProvider,omitempty"`
+}
+
+// OmniAgentContextProvider The type of the cluster provider.
+type OmniAgentContextProvider string
 
 // OnboardClusterResponse Message of the response to onboard cluster.
 type OnboardClusterResponse struct {
@@ -851,6 +1030,33 @@ type RegisteredClusterStatus struct {
 
 	// PodCidr The comma-separated list of pod CIDRs of the cluster.
 	PodCidr string `json:"podCidr"`
+}
+
+// RenderOmniAgentComponentResponse Message of the response to render the omni-agent component manifest.
+type RenderOmniAgentComponentResponse struct {
+	// Chart The helm chart to install.
+	Chart *RenderOmniAgentComponentResponseChart `json:"chart,omitempty"`
+
+	// ValuesOverrides The rendered values overrides for the omni-agent helm chart. Merged by castctl
+	//  on top of the chart defaults; secrets (e.g. the API key) are added client-side.
+	ValuesOverrides *map[string]interface{} `json:"valuesOverrides,omitempty"`
+}
+
+// RenderOmniAgentComponentResponseChart The helm chart of the component.
+type RenderOmniAgentComponentResponseChart struct {
+	// ChartUri The direct URI of the helm chart, e.g. an OCI reference
+	//  (oci://registry/repository/chart@sha256:...). When set, the chart is
+	//  installed directly from this URI instead of from a repository.
+	ChartUri *string `json:"chartUri,omitempty"`
+
+	// Name The name of the helm chart in the repository.
+	Name *string `json:"name,omitempty"`
+
+	// RepoUri The URI of the helm chart repository. Set when the chart is installed from a repository.
+	RepoUri *string `json:"repoUri,omitempty"`
+
+	// Version The version of the helm chart.
+	Version *string `json:"version,omitempty"`
 }
 
 // ReportStatusRequest Message to submit object status.
@@ -897,6 +1103,9 @@ type ReportStatusRequestEdge struct {
 
 // ReportStatusRequestEdgeLocation EdgeLocation object.
 type ReportStatusRequestEdgeLocation struct {
+	// Addons The readiness status of each installed addon.
+	Addons *[]EdgeLocationAddonStatus `json:"addons,omitempty"`
+
 	// Id The ID of the edge location.
 	Id string `json:"id"`
 
@@ -926,6 +1135,15 @@ type Zone struct {
 
 	// Name The name of the zone.
 	Name *string `json:"name,omitempty"`
+}
+
+// ClustersAPIRenderOmniAgentComponentParams defines parameters for ClustersAPIRenderOmniAgentComponent.
+type ClustersAPIRenderOmniAgentComponentParams struct {
+	// Version The requested omni-agent chart version. "latest" (or empty) resolves to the
+	//  latest version known to the API; otherwise must be an explicit chart
+	//  version or a full OCI chart reference (oci://...) to install the chart
+	//  directly from a registry.
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
 }
 
 // ClustersAPIListClustersParams defines parameters for ClustersAPIListClusters.
@@ -987,6 +1205,9 @@ type ClustersAPIGetClusterParams struct {
 	// IncludeEdgeLocations Whether edge locations should be included in the response.
 	IncludeEdgeLocations *bool `form:"includeEdgeLocations,omitempty" json:"includeEdgeLocations,omitempty"`
 }
+
+// ClustersAPIRenderOmniAgentComponentJSONRequestBody defines body for ClustersAPIRenderOmniAgentComponent for application/json ContentType.
+type ClustersAPIRenderOmniAgentComponentJSONRequestBody = OmniAgentContext
 
 // EdgeLocationsAPICreateEdgeLocationJSONRequestBody defines body for EdgeLocationsAPICreateEdgeLocation for application/json ContentType.
 type EdgeLocationsAPICreateEdgeLocationJSONRequestBody = EdgeLocation

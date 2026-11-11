@@ -8,14 +8,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/samber/lo"
+
+	"github.com/castai/terraform-provider-castai/castai/sdk/omni"
 )
 
 func TestAccCloudAgnostic_ResourceEdgeLocationOCI(t *testing.T) {
 	rName := fmt.Sprintf("%v-edge-loc-%v", ResourcePrefix, acctest.RandString(8))
-	clusterName := "test-oci-cluster"
+	clusterName := fmt.Sprintf("omni-tf-oci-%v", acctest.RandString(6))
 	resourceName := "castai_edge_location.test"
 
 	resource.Test(t, resource.TestCase{
@@ -36,6 +41,7 @@ func TestAccCloudAgnostic_ResourceEdgeLocationOCI(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "oci.compartment_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "oci.subnet_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "oci.vcn_peered", "true"),
 					resource.TestCheckResourceAttr(resourceName, "credentials_revision", "1"),
 					resource.TestCheckResourceAttr(resourceName, "networking.tunneled_cidrs.#", "0"),
 				),
@@ -99,6 +105,7 @@ resource "castai_edge_location" "test" {
     %[4]s
     vcn_id            = "ocid1.vcn.oc1.phx.example"
     vcn_cidr          = "10.0.0.0/16"
+    vcn_peered        = true
     subnet_id         = "ocid1.subnet.oc1.phx.example"
     security_group_id = "ocid1.networksecuritygroup.oc1.phx.example"
   }
@@ -113,7 +120,7 @@ resource "castai_edge_location" "test" {
 func TestAccCloudAgnostic_ResourceEdgeLocationAWSImpersonation(t *testing.T) {
 	rName := fmt.Sprintf("%v-edge-loc-%v", ResourcePrefix, acctest.RandString(8))
 	resourceName := "castai_edge_location.test"
-	clusterName := "omni-tf-acc-aws-imp"
+	clusterName := fmt.Sprintf("omni-tf-acc-aws-imp-%v", acctest.RandString(6))
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -180,6 +187,68 @@ func TestAccCloudAgnostic_ResourceEdgeLocationAWSImpersonation(t *testing.T) {
 					resource.TestCheckNoResourceAttr(resourceName, "control_plane"),
 				),
 			},
+			// Add liqo gateway_replicas.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, "Test edge location impersonation",
+					[]string{"us-east-1a", "us-east-1b"}, "arn:aws:iam::123456789012:role/castai-omni-edge", nil, nil, lo.ToPtr(int32(2))),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_replicas", "2"),
+				),
+			},
+			// Update liqo gateway_replicas.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, "Test edge location impersonation",
+					[]string{"us-east-1a", "us-east-1b"}, "arn:aws:iam::123456789012:role/castai-omni-edge", nil, nil, lo.ToPtr(int32(3))),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_replicas", "3"),
+				),
+			},
+			// Add control plane overrides and gateway server config.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfigWithOverrides(rName, clusterName, 6443, "platform"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "control_plane.ha", "false"),
+					resource.TestCheckResourceAttr(resourceName, "control_plane.external_address", "api.edge.example.com"),
+					resource.TestCheckResourceAttr(resourceName, "control_plane.api_server_port", "6443"),
+					resource.TestCheckResourceAttr(resourceName, "control_plane.konnectivity_port", "8132"),
+					resource.TestCheckResourceAttr(resourceName, "control_plane.service_annotations.owner", "platform"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_replicas", "2"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.external_address", "gw.edge.example.com"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.external_port", "51820"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.service_labels.tier", "edge"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.service_annotations.owner", "platform"),
+				),
+			},
+			// Update control plane and gateway server overrides.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfigWithOverrides(rName, clusterName, 7443, "updated"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "control_plane.api_server_port", "7443"),
+					resource.TestCheckResourceAttr(resourceName, "control_plane.service_annotations.owner", "updated"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.service_annotations.owner", "updated"),
+				),
+			},
+			// Unset ports and gateway_replicas stay null (not API defaults) and must not drift.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfigOverridesMinimal(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "control_plane.external_address", "api.edge.example.com"),
+					resource.TestCheckNoResourceAttr(resourceName, "control_plane.api_server_port"),
+					resource.TestCheckNoResourceAttr(resourceName, "control_plane.konnectivity_port"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.external_address", "gw.edge.example.com"),
+					resource.TestCheckResourceAttr(resourceName, "liqo.gateway_server.service_labels.tier", "edge"),
+					resource.TestCheckNoResourceAttr(resourceName, "liqo.gateway_replicas"),
+				),
+			},
+			// Remove liqo block entirely.
+			{
+				Config: testAccEdgeLocationAWSImpersonationConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "networking.tunneled_cidrs.#", "0"),
+					resource.TestCheckNoResourceAttr(resourceName, "control_plane"),
+					resource.TestCheckNoResourceAttr(resourceName, "liqo"),
+				),
+			},
 		},
 	})
 }
@@ -187,12 +256,12 @@ func TestAccCloudAgnostic_ResourceEdgeLocationAWSImpersonation(t *testing.T) {
 func TestAccCloudAgnostic_ResourceEdgeLocationGCPImpersonation(t *testing.T) {
 	rName := fmt.Sprintf("%v-edge-loc-%v", ResourcePrefix, acctest.RandString(8))
 	resourceName := "castai_edge_location.test"
-	clusterName := "omni-tf-acc-el-gcp"
+	clusterName := fmt.Sprintf("omni-tf-acc-el-gcp-%v", acctest.RandString(6))
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccCheckEdgeLocationDestroy,
+		CheckDestroy:             testAccCheckEdgeResourcesDestroy(testAccCheckEdgeLocationDestroy),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccEdgeLocationGCPImpersonationConfig(rName, clusterName),
@@ -280,17 +349,17 @@ func formatAWSZonesAndSubnets(zones []string) (zonesConfig string, subnetConfig 
 
 func testAccEdgeLocationAWSImpersonationConfig(rName, clusterName string) string {
 	return testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, "Test edge location impersonation",
-		[]string{"us-east-1a", "us-east-1b"}, "arn:aws:iam::123456789012:role/castai-omni-edge", nil, nil)
+		[]string{"us-east-1a", "us-east-1b"}, "arn:aws:iam::123456789012:role/castai-omni-edge", nil, nil, nil)
 }
 
 func testAccEdgeLocationAWSImpersonationUpdated(rName, clusterName string) string {
 	ha := false
 	return testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, "Updated edge location impersonation",
 		[]string{"us-east-1a", "us-east-1b", "us-east-1c"}, "arn:aws:iam::123456789012:role/castai-omni-edge-updated",
-		[]string{"10.10.0.0/16", "192.168.0.0/24"}, &ha)
+		[]string{"10.10.0.0/16", "192.168.0.0/24"}, &ha, nil)
 }
 
-func testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, description string, zones []string, roleArn string, tunneledCIDRs []string, ha *bool) string {
+func testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, description string, zones []string, roleArn string, tunneledCIDRs []string, ha *bool, gatewayReplicas *int32) string {
 	organizationID := testAccGetOrganizationID()
 
 	zonesConfig, subnetConfig := formatAWSZonesAndSubnets(zones)
@@ -318,6 +387,14 @@ func testAccEdgeLocationAWSImpersonationConfigWithParams(rName, clusterName, des
   }`, *ha)
 	}
 
+	liqoBlock := ""
+	if gatewayReplicas != nil {
+		liqoBlock = fmt.Sprintf(`
+  liqo = {
+    gateway_replicas = %d
+  }`, *gatewayReplicas)
+	}
+
 	return ConfigCompose(testOmniClusterConfig(clusterName), fmt.Sprintf(`
 resource "castai_edge_location" "test" {
   organization_id 	 = %[5]q
@@ -329,6 +406,7 @@ resource "castai_edge_location" "test" {
 %[3]s
 %[7]s
 %[8]s
+%[9]s
 
   aws = {
     account_id               = "123456789012"
@@ -342,7 +420,103 @@ resource "castai_edge_location" "test" {
     }
   }
 }
-`, rName, description, zonesConfig, subnetConfig, organizationID, roleArn, networkingBlock, controlPlaneBlock))
+`, rName, description, zonesConfig, subnetConfig, organizationID, roleArn, networkingBlock, controlPlaneBlock, liqoBlock))
+}
+
+func testAccEdgeLocationAWSImpersonationConfigWithOverrides(rName, clusterName string, apiServerPort int32, annotationValue string) string {
+	organizationID := testAccGetOrganizationID()
+
+	zonesConfig, subnetConfig := formatAWSZonesAndSubnets([]string{"us-east-1a", "us-east-1b"})
+
+	return ConfigCompose(testOmniClusterConfig(clusterName), fmt.Sprintf(`
+resource "castai_edge_location" "test" {
+  organization_id 	 = %[4]q
+  cluster_id      	 = castai_omni_cluster.test.id
+  name            	 = %[1]q
+  description     	 = "Test edge location impersonation"
+  region          	 = "us-east-1"
+  control_plane_mode = "SHARED"
+%[2]s
+
+  control_plane = {
+    ha                = false
+    external_address  = "api.edge.example.com"
+    api_server_port   = %[5]d
+    konnectivity_port = 8132
+    service_annotations = {
+      owner = %[6]q
+    }
+  }
+
+  liqo = {
+    gateway_replicas = 2
+    gateway_server = {
+      external_address = "gw.edge.example.com"
+      external_port    = 51820
+      service_labels = {
+        tier = "edge"
+      }
+      service_annotations = {
+        owner = %[6]q
+      }
+    }
+  }
+
+  aws = {
+    account_id        = "123456789012"
+    role_arn          = "arn:aws:iam::123456789012:role/castai-omni-edge"
+    vpc_id            = "vpc-12345678"
+    vpc_peered        = true
+    vpc_cidr          = "10.0.0.0/16"
+    security_group_id = "sg-12345678"
+    subnet_ids = {%[3]s
+    }
+  }
+}
+`, rName, zonesConfig, subnetConfig, organizationID, apiServerPort, annotationValue))
+}
+
+func testAccEdgeLocationAWSImpersonationConfigOverridesMinimal(rName, clusterName string) string {
+	organizationID := testAccGetOrganizationID()
+
+	zonesConfig, subnetConfig := formatAWSZonesAndSubnets([]string{"us-east-1a", "us-east-1b"})
+
+	return ConfigCompose(testOmniClusterConfig(clusterName), fmt.Sprintf(`
+resource "castai_edge_location" "test" {
+  organization_id 	 = %[4]q
+  cluster_id      	 = castai_omni_cluster.test.id
+  name            	 = %[1]q
+  description     	 = "Test edge location impersonation"
+  region          	 = "us-east-1"
+  control_plane_mode = "SHARED"
+%[2]s
+
+  control_plane = {
+    ha               = false
+    external_address = "api.edge.example.com"
+  }
+
+  liqo = {
+    gateway_server = {
+      external_address = "gw.edge.example.com"
+      service_labels = {
+        tier = "edge"
+      }
+    }
+  }
+
+  aws = {
+    account_id        = "123456789012"
+    role_arn          = "arn:aws:iam::123456789012:role/castai-omni-edge"
+    vpc_id            = "vpc-12345678"
+    vpc_peered        = true
+    vpc_cidr          = "10.0.0.0/16"
+    security_group_id = "sg-12345678"
+    subnet_ids = {%[3]s
+    }
+  }
+}
+`, rName, zonesConfig, subnetConfig, organizationID))
 }
 
 func testAccEdgeLocationGCPImpersonationConfig(rName, clusterName string) string {
@@ -443,7 +617,7 @@ func TestAccCloudAgnostic_ResourceEdgeLocationCustom(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccCheckEdgeLocationDestroy,
+		CheckDestroy:             testAccCheckEdgeResourcesDestroy(testAccCheckEdgeLocationDestroy),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccEdgeLocationCustomConfig(rName, clusterName),
@@ -598,4 +772,164 @@ resource "castai_omni_cluster" "test" {
   }
 }
 `, organizationID, clusterName)
+}
+
+func TestAccCloudAgnostic_ResourceEdgeLocationNebiusWIF(t *testing.T) {
+	rName := fmt.Sprintf("%v-edge-loc-%v", ResourcePrefix, acctest.RandString(8))
+	resourceName := "castai_edge_location.test"
+	clusterName := fmt.Sprintf("omni-tf-acc-el-nebius-%v", acctest.RandString(6))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckEdgeResourcesDestroy(testAccCheckEdgeLocationDestroy),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccEdgeLocationNebiusWIFConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "description", "Test Nebius edge location WIF"),
+					resource.TestCheckResourceAttr(resourceName, "region", "eu-north1"),
+					resource.TestCheckResourceAttr(resourceName, "zones.#", "2"),
+					resource.TestCheckResourceAttr(resourceName, "zones.0.id", "eu-north1-a"),
+					resource.TestCheckResourceAttr(resourceName, "zones.0.name", "eu-north1-a"),
+					resource.TestCheckResourceAttr(resourceName, "zones.1.id", "eu-north1-b"),
+					resource.TestCheckResourceAttr(resourceName, "zones.1.name", "eu-north1-b"),
+					resource.TestCheckResourceAttrSet(resourceName, "nebius.parent_id"),
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "credentials_revision", "1"),
+				),
+			},
+			{
+				ResourceName: resourceName,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					organizationID := testAccGetOrganizationID()
+					clusterID := s.RootModule().Resources["castai_omni_cluster.test"].Primary.ID
+					edgeLocationID := s.RootModule().Resources[resourceName].Primary.ID
+					return fmt.Sprintf("%v/%v/%v", organizationID, clusterID, edgeLocationID), nil
+				},
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"networking"},
+			},
+			{
+				Config: testAccEdgeLocationNebiusWIFUpdated(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "description", "Updated Nebius edge location WIF"),
+				),
+			},
+		},
+	})
+}
+
+func testAccEdgeLocationNebiusWIFConfig(rName, clusterName string) string {
+	return testAccEdgeLocationNebiusWIFConfigWithParams(rName, clusterName,
+		"Test Nebius edge location WIF")
+}
+
+func testAccEdgeLocationNebiusWIFUpdated(rName, clusterName string) string {
+	return testAccEdgeLocationNebiusWIFConfigWithParams(rName, clusterName,
+		"Updated Nebius edge location WIF")
+}
+
+func testAccEdgeLocationNebiusWIFConfigWithParams(rName, clusterName, description string) string {
+	organizationID := testAccGetOrganizationID()
+
+	return ConfigCompose(testOmniClusterConfig(clusterName), fmt.Sprintf(`
+resource "castai_edge_location" "test" {
+  organization_id   = %[5]q
+  cluster_id        = castai_omni_cluster.test.id
+  name              = %[1]q
+  description       = %[2]q
+  region            = "eu-north1"
+  control_plane_mode = "SHARED"
+  zones = [
+    {
+      id   = "eu-north1-a"
+      name = "eu-north1-a"
+    }, {
+      id   = "eu-north1-b"
+      name = "eu-north1-b"
+    }
+  ]
+
+  networking = {
+    tunneled_cidrs = []
+  }
+
+  nebius = {
+    parent_id                = "project-nebius-123456"
+    service_account_id       = "serviceaccount-nebius"
+    network_id               = "test-network"
+    subnet_id               = "test-subnet"
+    subnet_cidr             = "10.0.0.0/20"
+    security_group_id        = "test-sg"
+  }
+}
+`, rName, description, clusterName, organizationID, organizationID))
+}
+
+// TestEdgeLocationOCIVcnPeeredMapping covers the toOCI/toOCIModel mapping of the
+// vcn_peered attribute, including the null case: the REST API omits vcnPeered at
+// its zero value, so an omitted field must round-trip to a null attribute.
+func TestEdgeLocationOCIVcnPeeredMapping(t *testing.T) {
+	r := &edgeLocationResource{}
+
+	newModel := func(peered types.Bool) *ociModel {
+		return &ociModel{
+			TenancyID:          types.StringValue("tenancy"),
+			CompartmentID:      types.StringValue("compartment"),
+			UserIDWO:           types.StringValue("user"),
+			FingerprintWO:      types.StringValue("fingerprint"),
+			PrivateKeyBase64WO: types.StringValue("key"),
+			VcnID:              types.StringValue("vcn"),
+			SubnetID:           types.StringValue("subnet"),
+			VcnPeered:          peered,
+		}
+	}
+
+	t.Run("toOCI sends pointer when set true", func(t *testing.T) {
+		m := newModel(types.BoolValue(true))
+		out := r.toOCI(m, m)
+		if out == nil || out.Networking == nil || out.Networking.VcnPeered == nil || !*out.Networking.VcnPeered {
+			t.Fatalf("expected VcnPeered=true pointer, got %+v", out.Networking)
+		}
+	})
+
+	t.Run("toOCI sends pointer when set false", func(t *testing.T) {
+		m := newModel(types.BoolValue(false))
+		out := r.toOCI(m, m)
+		if out == nil || out.Networking == nil || out.Networking.VcnPeered == nil || *out.Networking.VcnPeered {
+			t.Fatalf("expected VcnPeered=false pointer, got %+v", out.Networking)
+		}
+	})
+
+	t.Run("toOCI omits field when unset", func(t *testing.T) {
+		m := newModel(types.BoolNull())
+		out := r.toOCI(m, m)
+		if out == nil || out.Networking == nil {
+			t.Fatal("expected networking to be set")
+		}
+		if out.Networking.VcnPeered != nil {
+			t.Fatalf("expected VcnPeered to be nil, got %v", *out.Networking.VcnPeered)
+		}
+	})
+
+	t.Run("toOCIModel reads back true", func(t *testing.T) {
+		out := r.toOCIModel(&omni.OCIParam{
+			Networking: &omni.OCIParamNetworking{VcnId: "vcn", SubnetId: "subnet", VcnPeered: lo.ToPtr(true)},
+		})
+		if out == nil || out.VcnPeered.IsNull() || !out.VcnPeered.ValueBool() {
+			t.Fatalf("expected vcn_peered=true, got %v", out.VcnPeered)
+		}
+	})
+
+	t.Run("toOCIModel maps omitted field to null", func(t *testing.T) {
+		out := r.toOCIModel(&omni.OCIParam{
+			Networking: &omni.OCIParamNetworking{VcnId: "vcn", SubnetId: "subnet"},
+		})
+		if out == nil || !out.VcnPeered.IsNull() {
+			t.Fatalf("expected vcn_peered to be null, got %v", out.VcnPeered)
+		}
+	})
 }

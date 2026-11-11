@@ -3,6 +3,7 @@ package castai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -380,7 +381,7 @@ func TestAKSClusterResourceUpdateContext(t *testing.T) {
 			Return(&http.Response{StatusCode: 200, Body: readResponse, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
 		mockClient.EXPECT().
 			ExternalClusterAPIUpdateCluster(gomock.Any(), clusterID, gomock.Any()).
-			DoAndReturn(func(_ context.Context, _ string, body sdk.ExternalClusterAPIUpdateClusterJSONRequestBody) (*http.Response, error) {
+			DoAndReturn(func(_ context.Context, _ string, body sdk.ExternalClusterAPIUpdateClusterJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				r.Equal(expectedHttpProxySettings.Aks.HttpProxyConfig.HttpsProxy, body.Aks.HttpProxyConfig.HttpsProxy)
 				r.Equal(expectedHttpProxySettings.Aks.HttpProxyConfig.HttpProxy, body.Aks.HttpProxyConfig.HttpProxy)
 				r.ElementsMatch(*expectedHttpProxySettings.Aks.HttpProxyConfig.NoProxy, *body.Aks.HttpProxyConfig.NoProxy)
@@ -412,6 +413,118 @@ func TestAKSClusterResourceUpdateContext(t *testing.T) {
 		r.Equal(proxyConfigElem[FieldAKSHttpProxyDestination], *expectedHttpProxySettings.Aks.HttpProxyConfig.HttpProxy)
 		r.Equal(proxyConfigElem[FieldAKSHttpsProxyDestination], *expectedHttpProxySettings.Aks.HttpProxyConfig.HttpsProxy)
 		r.ElementsMatch(proxyConfigElem[FieldAKSNoProxyDestinations], *expectedHttpProxySettings.Aks.HttpProxyConfig.NoProxy)
+	})
+
+	t.Run("Saves CA cert config correctly", func(t *testing.T) {
+		r := require.New(t)
+		mockctrl := gomock.NewController(t)
+		mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+		provider := &ProviderConfig{
+			api: &sdk.ClientWithResponses{
+				ClientInterface: mockClient,
+			},
+		}
+
+		caCert := "-----BEGIN CERTIFICATE-----\nMIIBxTCCAW6gAwIBAgIRAO/3k3BZ6Dx5qQ==\n-----END CERTIFICATE-----"
+		encodedCaCert := base64.StdEncoding.EncodeToString([]byte(caCert))
+		expectedCaCertSettings := &sdk.ExternalClusterAPIUpdateClusterJSONRequestBody{
+			Aks: &sdk.ExternalclusterV1UpdateAKSClusterParams{
+				CaCertConfig: &sdk.ExternalclusterV1CACertConfig{
+					CaCerts: lo.ToPtr([]string{encodedCaCert}),
+				},
+			},
+		}
+		jsonCaCert, err := json.Marshal(expectedCaCertSettings)
+		r.NoError(err)
+
+		readResponse := io.NopCloser(bytes.NewReader([]byte(`{"credentialsId": ""}`)))
+		updateResponse := io.NopCloser(bytes.NewReader(jsonCaCert))
+		mockClient.EXPECT().
+			ExternalClusterAPIGetCluster(gomock.Any(), clusterID).
+			Return(&http.Response{StatusCode: 200, Body: readResponse, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+		mockClient.EXPECT().
+			ExternalClusterAPIUpdateCluster(gomock.Any(), clusterID, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ string, body sdk.ExternalClusterAPIUpdateClusterJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+				r.NotNil(body.Aks.CaCertConfig)
+				r.ElementsMatch(*expectedCaCertSettings.Aks.CaCertConfig.CaCerts, *body.Aks.CaCertConfig.CaCerts)
+				return &http.Response{StatusCode: 200, Body: updateResponse, Header: map[string][]string{"Content-Type": {"json"}}}, nil
+			})
+
+		aksResource := resourceAKSCluster()
+
+		diff := map[string]any{
+			FieldAKSCaCertConfig: []any{
+				map[string]any{
+					FieldAKSCaCerts: []any{encodedCaCert},
+				},
+			},
+			FieldClusterCredentialsId: "",
+		}
+		data := schema.TestResourceDataRaw(t, aksResource.Schema, diff)
+		data.SetId(clusterID)
+		diagnostics := aksResource.UpdateContext(ctx, data, provider)
+
+		r.Empty(diagnostics)
+	})
+
+	t.Run("Rejects invalid base64 CA cert", func(t *testing.T) {
+		r := require.New(t)
+		mockctrl := gomock.NewController(t)
+		mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+		provider := &ProviderConfig{
+			api: &sdk.ClientWithResponses{
+				ClientInterface: mockClient,
+			},
+		}
+
+		// No API calls expected — validation fails before reaching the API.
+		aksResource := resourceAKSCluster()
+
+		diff := map[string]any{
+			FieldAKSCaCertConfig: []any{
+				map[string]any{
+					FieldAKSCaCerts: []any{"!!!not-valid-base64!!!"},
+				},
+			},
+			FieldClusterCredentialsId: "",
+		}
+		data := schema.TestResourceDataRaw(t, aksResource.Schema, diff)
+		data.SetId(clusterID)
+		diagnostics := aksResource.UpdateContext(ctx, data, provider)
+
+		r.NotEmpty(diagnostics)
+		r.Contains(diagnostics[0].Summary, "invalid base64")
+	})
+
+	t.Run("Rejects valid base64 but invalid PEM CA cert", func(t *testing.T) {
+		r := require.New(t)
+		mockctrl := gomock.NewController(t)
+		mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+		provider := &ProviderConfig{
+			api: &sdk.ClientWithResponses{
+				ClientInterface: mockClient,
+			},
+		}
+
+		invalidPem := base64.StdEncoding.EncodeToString([]byte("not-a-certificate"))
+
+		// No API calls expected — validation fails before reaching the API.
+		aksResource := resourceAKSCluster()
+
+		diff := map[string]any{
+			FieldAKSCaCertConfig: []any{
+				map[string]any{
+					FieldAKSCaCerts: []any{invalidPem},
+				},
+			},
+			FieldClusterCredentialsId: "",
+		}
+		data := schema.TestResourceDataRaw(t, aksResource.Schema, diff)
+		data.SetId(clusterID)
+		diagnostics := aksResource.UpdateContext(ctx, data, provider)
+
+		r.NotEmpty(diagnostics)
+		r.Contains(diagnostics[0].Summary, "not a valid PEM")
 	})
 }
 
@@ -508,7 +621,6 @@ func TestAccAKS_ResourceAKSCluster(t *testing.T) {
 					resource.TestCheckResourceAttr(nodeConfResourceName, "aks.0.public_ip.0.public_ip_prefix", "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/publicIPAddresses/test-ip"),
 					resource.TestCheckResourceAttr(nodeConfResourceName, "aks.0.public_ip.0.tags.FirstPartyUsage", "something"),
 					resource.TestCheckResourceAttr(nodeConfResourceName, "aks.0.public_ip.0.idle_timeout_in_minutes", "10"),
-					resource.TestCheckResourceAttrSet(nodeConfResourceName, "aks.0.pod_subnet_id"),
 					resource.TestCheckResourceAttr(nodeConfResourceName, "aks.0.accelerated_networking", "disabled"),
 					resource.TestCheckResourceAttr(nodeConfResourceName, "eks.#", "0"),
 					resource.TestCheckResourceAttr(nodeConfResourceName, "kops.#", "0"),
@@ -556,10 +668,14 @@ resource "castai_aks_cluster" "test" {
 func testAccAKSWithFederationIDConfig(clusterName string) string {
 	subscriptionID := os.Getenv("ARM_SUBSCRIPTION_ID")
 	federationID := os.Getenv("AZURE_TF_ACCEPTANCE_TEST_FEDERATION_ID")
-	tenantID := os.Getenv("AZURE_TF_ACCEPTANCE_TEST_FEDERATION_TENANT_ID")
+	tenantID := os.Getenv("AZURE_TF_ACCEPTANCE_TEST_ARM_TENANT_ID")
 	clientID := os.Getenv("AZURE_TF_ACCEPTANCE_TEST_FEDERATION_CLIENT_ID")
 
 	return fmt.Sprintf(`
+data "castai_impersonation_service_account" "imp" {
+  provider_type = "aks"
+}
+
 resource "castai_aks_cluster" "test" {
   name = %[3]q
 

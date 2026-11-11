@@ -50,6 +50,7 @@ const (
 	FieldNodeConfigurationAKSPodSubnetID               = "pod_subnet_id"
 	FieldNodeConfigurationAKSEncryptionAtHost          = "enable_encryption_at_host"
 	FieldNodeConfigurationAKSAcceleratedNetworking     = "accelerated_networking"
+	FieldNodeConfigurationEKSNestedVirtualisation      = "nested_virtualisation"
 )
 
 const (
@@ -59,12 +60,18 @@ const (
 )
 
 const (
+	eksNestedVirtualisationEnabled  = "enabled"
+	eksNestedVirtualisationDisabled = "disabled"
+)
+
+const (
 	aksImageFamilyUbuntu                  = "ubuntu"
 	aksImageFamilyUbuntu2204              = "ubuntu2204"
 	aksImageFamilyUbuntu2404              = "ubuntu2404"
 	aksImageFamilyAzureLinux              = "azure-linux"
 	aksImageFamilyWindows2019             = "windows2019"
 	aksImageFamilyWindows2022             = "windows2022"
+	aksImageFamilyWindows2025             = "windows2025"
 	aksEphemeralDiskPlacementCacheDisk    = "cacheDisk"
 	aksEphemeralDiskPlacementResourceDisk = "resourceDisk"
 	aksEphemeralDiskPlacementNVME         = "nvmeDisk"
@@ -327,6 +334,12 @@ func resourceNodeConfiguration() *schema.Resource {
 							Description:      "Number of ENA queues per network interface.",
 							ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
 						},
+						FieldNodeConfigurationEKSNestedVirtualisation: {
+							Type:             schema.TypeString,
+							Optional:         true,
+							Description:      "Controls EC2 nested virtualisation on provisioned nodes. Allowed values: `enabled`, `disabled`. When omitted, the field is not sent to the API and the API default (nested virtualisation off) applies.",
+							ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{eksNestedVirtualisationEnabled, eksNestedVirtualisationDisabled}, false)),
+						},
 					},
 				},
 			},
@@ -357,8 +370,8 @@ func resourceNodeConfiguration() *schema.Resource {
 									"If both image and family are provided, the system will use provided image and provisioning logic for given family. "+
 									"If only image family is provided, the system will attempt to resolve the latest image from that family based on kubernetes version and node architecture. "+
 									"If image family is omitted, a default family (based on cloud provider) will be used. "+
-									"See Cast.ai documentation for details. Possible values: (%v)", strings.Join([]string{aksImageFamilyUbuntu, aksImageFamilyUbuntu2204, aksImageFamilyUbuntu2404, aksImageFamilyAzureLinux, aksImageFamilyWindows2019, aksImageFamilyWindows2022}, ",")),
-							ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{aksImageFamilyUbuntu, aksImageFamilyUbuntu2204, aksImageFamilyUbuntu2404, aksImageFamilyAzureLinux, aksImageFamilyWindows2019, aksImageFamilyWindows2022}, true)),
+									"See Cast.ai documentation for details. Possible values: (%v)", strings.Join([]string{aksImageFamilyUbuntu, aksImageFamilyUbuntu2204, aksImageFamilyUbuntu2404, aksImageFamilyAzureLinux, aksImageFamilyWindows2019, aksImageFamilyWindows2022, aksImageFamilyWindows2025}, ",")),
+							ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{aksImageFamilyUbuntu, aksImageFamilyUbuntu2204, aksImageFamilyUbuntu2404, aksImageFamilyAzureLinux, aksImageFamilyWindows2019, aksImageFamilyWindows2022, aksImageFamilyWindows2025}, true)),
 							DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
 								return strings.EqualFold(oldValue, newValue)
 							},
@@ -587,6 +600,31 @@ For a node with 8 CPUs and 16 GB RAM, this calculates to 40 (5×8), 80 (5×16), 
 							Optional:    true,
 							Default:     nil,
 							Description: "Use ephemeral storage local SSD. Defaults to false",
+						},
+						"secondary_boot_disks": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "Secondary boot disks to be attached to provisioned nodes. Can be used to preload container images or arbitrary data on new nodes.",
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"disk_image": {
+										Type:        schema.TypeString,
+										Required:    true,
+										Description: "Image the disk is initialized from: a GKE image reference, projects/PROJECT/global/images/NAME or the same-project shorthand global/images/NAME.",
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringMatch(
+											regexp.MustCompile(`^(projects/[^/]+/global/images|global/images)/[^/]+$`),
+											"must be a GKE image reference: projects/PROJECT/global/images/NAME or global/images/NAME",
+										)),
+									},
+									"mode": {
+										Type:             schema.TypeString,
+										Optional:         true,
+										Default:          "MODE_UNSPECIFIED",
+										Description:      "Mode of the secondary boot disk. MODE_UNSPECIFIED (default) - arbitrary data disk: the kubelet exposes it via SECONDARY_BOOT_DATA_DISK. CONTAINER_IMAGE_CACHE - container image cache: the kubelet exposes it via SECONDARY_BOOT_DISKS and the cluster must have image streaming enabled.",
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"MODE_UNSPECIFIED", "CONTAINER_IMAGE_CACHE"}, false)),
+									},
+								},
+							},
 						},
 						"secondary_ip_range": {
 							Type:        schema.TypeList,
@@ -1037,7 +1075,33 @@ func toEKSConfig(obj map[string]interface{}) *sdk.NodeconfigV1EKSConfig {
 		out.EnaQueueCountPerInterface = toPtr(int32(v))
 	}
 
+	if v, ok := obj[FieldNodeConfigurationEKSNestedVirtualisation].(string); ok && v != "" {
+		out.NestedVirtualisation = toEKSNodeConfigNestedVirtualisationMode(v)
+	}
+
 	return out
+}
+
+func toEKSNodeConfigNestedVirtualisationMode(v string) *sdk.NodeconfigV1EKSConfigNestedVirtualisationMode {
+	switch strings.ToLower(v) {
+	case eksNestedVirtualisationEnabled:
+		return lo.ToPtr(sdk.NodeconfigV1EKSConfigNestedVirtualisationModeNESTEDVIRTUALISATIONMODEENABLED)
+	case eksNestedVirtualisationDisabled:
+		return lo.ToPtr(sdk.NodeconfigV1EKSConfigNestedVirtualisationModeNESTEDVIRTUALISATIONMODEDISABLED)
+	default:
+		return nil
+	}
+}
+
+func fromEKSNodeConfigNestedVirtualisationMode(v sdk.NodeconfigV1EKSConfigNestedVirtualisationMode) string {
+	switch v {
+	case sdk.NodeconfigV1EKSConfigNestedVirtualisationModeNESTEDVIRTUALISATIONMODEENABLED:
+		return eksNestedVirtualisationEnabled
+	case sdk.NodeconfigV1EKSConfigNestedVirtualisationModeNESTEDVIRTUALISATIONMODEDISABLED:
+		return eksNestedVirtualisationDisabled
+	default:
+		return ""
+	}
 }
 
 func toEKSImageFamily(v string) *sdk.NodeconfigV1EKSConfigImageFamily {
@@ -1137,6 +1201,12 @@ func flattenEKSConfig(config *sdk.NodeconfigV1EKSConfig) []map[string]interface{
 		m["ena_queue_count_per_interface"] = *config.EnaQueueCountPerInterface
 	}
 
+	if v := config.NestedVirtualisation; v != nil {
+		if s := fromEKSNodeConfigNestedVirtualisationMode(*v); s != "" {
+			m[FieldNodeConfigurationEKSNestedVirtualisation] = s
+		}
+	}
+
 	return []map[string]interface{}{m}
 }
 
@@ -1234,7 +1304,7 @@ func toAKSSConfig(obj map[string]interface{}) *sdk.NodeconfigV1AKSConfig {
 func toAKSAcceleratedNetworkingMode(v string) *sdk.NodeconfigV1AKSConfigAcceleratedNetworkingMode {
 	switch v {
 	case aksAcceleratedNetworkingDisabled:
-		return toPtr(sdk.ACCELERATEDNETWORKINGMODEDISABLED)
+		return toPtr(sdk.NodeconfigV1AKSConfigAcceleratedNetworkingModeACCELERATEDNETWORKINGMODEDISABLED)
 	default:
 		return nil
 	}
@@ -1242,7 +1312,7 @@ func toAKSAcceleratedNetworkingMode(v string) *sdk.NodeconfigV1AKSConfigAccelera
 
 func fromAKSAcceleratedNetworkingMode(v sdk.NodeconfigV1AKSConfigAcceleratedNetworkingMode) string {
 	switch v {
-	case sdk.ACCELERATEDNETWORKINGMODEDISABLED:
+	case sdk.NodeconfigV1AKSConfigAcceleratedNetworkingModeACCELERATEDNETWORKINGMODEDISABLED:
 		return aksAcceleratedNetworkingDisabled
 	default:
 		return ""
@@ -1372,11 +1442,11 @@ func toAKSOSDiskType(v string) *sdk.NodeconfigV1AKSConfigOsDiskType {
 
 	switch v {
 	case "standard":
-		return toPtr(sdk.OSDISKTYPESTANDARD)
+		return toPtr(sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPESTANDARD)
 	case "standard-ssd":
-		return toPtr(sdk.OSDISKTYPESTANDARDSSD)
+		return toPtr(sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPESTANDARDSSD)
 	case "premium-ssd":
-		return toPtr(sdk.OSDISKTYPEPREMIUMSSD)
+		return toPtr(sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPEPREMIUMSSD)
 	default:
 		return nil
 	}
@@ -1400,6 +1470,8 @@ func toAKSImageFamily(v string) *sdk.NodeconfigV1AKSConfigImageFamily {
 		return lo.ToPtr(sdk.NodeconfigV1AKSConfigImageFamilyFAMILYWINDOWS2019)
 	case aksImageFamilyWindows2022:
 		return lo.ToPtr(sdk.NodeconfigV1AKSConfigImageFamilyFAMILYWINDOWS2022)
+	case aksImageFamilyWindows2025:
+		return lo.ToPtr(sdk.NodeconfigV1AKSConfigImageFamilyFAMILYWINDOWS2025)
 	default:
 		return nil
 	}
@@ -1564,11 +1636,11 @@ func fromAKSDiskType(osDiskType *sdk.NodeconfigV1AKSConfigOsDiskType) string {
 		return ""
 	}
 	switch *osDiskType {
-	case sdk.OSDISKTYPESTANDARD:
+	case sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPESTANDARD:
 		return "standard"
-	case sdk.OSDISKTYPESTANDARDSSD:
+	case sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPESTANDARDSSD:
 		return "standard-ssd"
-	case sdk.OSDISKTYPEPREMIUMSSD:
+	case sdk.NodeconfigV1AKSConfigOsDiskTypeOSDISKTYPEPREMIUMSSD:
 		return "premium-ssd"
 	default:
 		return ""
@@ -1589,6 +1661,8 @@ func fromAKSImageFamily(family sdk.NodeconfigV1AKSConfigImageFamily) string {
 		return aksImageFamilyWindows2019
 	case sdk.NodeconfigV1AKSConfigImageFamilyFamilyWindows2022, sdk.NodeconfigV1AKSConfigImageFamilyFAMILYWINDOWS2022:
 		return aksImageFamilyWindows2022
+	case sdk.NodeconfigV1AKSConfigImageFamilyFamilyWindows2025, sdk.NodeconfigV1AKSConfigImageFamilyFAMILYWINDOWS2025:
+		return aksImageFamilyWindows2025
 	default:
 		return ""
 	}
@@ -1627,6 +1701,10 @@ func toGKEConfig(obj map[string]interface{}) *sdk.NodeconfigV1GKEConfig {
 		}
 	}
 
+	if v, ok := obj["secondary_boot_disks"].([]interface{}); ok && len(v) > 0 {
+		out.SecondaryBootDisks = toGkeSecondaryBootDisks(v)
+	}
+
 	if v, ok := obj["on_host_maintenance"].(string); ok && v != "" {
 		out.OnHostMaintenance = toPtr(sdk.NodeconfigV1GKEConfigOnHostMaintenance(v))
 	}
@@ -1636,6 +1714,27 @@ func toGKEConfig(obj map[string]interface{}) *sdk.NodeconfigV1GKEConfig {
 	}
 
 	return out
+}
+
+func toGkeSecondaryBootDisks(obj []interface{}) *[]sdk.NodeconfigV1SecondaryBootDisk {
+	out := make([]sdk.NodeconfigV1SecondaryBootDisk, 0, len(obj))
+	for _, disk := range obj {
+		diskMap, ok := disk.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		entry := sdk.NodeconfigV1SecondaryBootDisk{}
+		if v, ok := diskMap["disk_image"].(string); ok && v != "" {
+			entry.DiskImage = toPtr(v)
+		}
+		mode := sdk.NodeconfigV1SecondaryBootDiskModeMODEUNSPECIFIED
+		if v, ok := diskMap["mode"].(string); ok && v != "" {
+			mode = sdk.NodeconfigV1SecondaryBootDiskMode(v)
+		}
+		entry.Mode = toPtr(mode)
+		out = append(out, entry)
+	}
+	return &out
 }
 
 func toGkeLoadBalancers(obj []interface{}) *[]sdk.NodeconfigV1GKEConfigLoadBalancers {
@@ -1735,6 +1834,10 @@ func flattenGKEConfig(config *sdk.NodeconfigV1GKEConfig) []map[string]interface{
 		}
 	}
 
+	if v := config.SecondaryBootDisks; v != nil && len(*v) > 0 {
+		m["secondary_boot_disks"] = fromGkeSecondaryBootDisks(*v)
+	}
+
 	if v := config.OnHostMaintenance; v != nil {
 		m["on_host_maintenance"] = *v
 	}
@@ -1774,6 +1877,23 @@ func fromGkeLoadBalancers(objs []sdk.NodeconfigV1GKEConfigLoadBalancers) []map[s
 		}
 	}
 
+	return results
+}
+
+func fromGkeSecondaryBootDisks(objs []sdk.NodeconfigV1SecondaryBootDisk) []map[string]interface{} {
+	results := make([]map[string]interface{}, 0, len(objs))
+	for _, obj := range objs {
+		result := make(map[string]interface{})
+		if obj.DiskImage != nil {
+			result["disk_image"] = *obj.DiskImage
+		}
+		mode := sdk.NodeconfigV1SecondaryBootDiskModeMODEUNSPECIFIED
+		if obj.Mode != nil && *obj.Mode != "" {
+			mode = *obj.Mode
+		}
+		result["mode"] = string(mode)
+		results = append(results, result)
+	}
 	return results
 }
 

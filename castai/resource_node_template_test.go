@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	sdkterraform "github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -116,7 +117,8 @@ func TestNodeTemplateResourceReadContext(t *testing.T) {
 						  }
 						],
 						"cpusPerGpu": 4,
-              			"minGpusPerNode": 2
+              			"minGpusPerNode": 2,
+					    "maxCpu": 96
 					}
 				  ],
 				  "cpuManufacturers": ["INTEL", "AMD"],
@@ -124,6 +126,9 @@ func TestNodeTemplateResourceReadContext(t *testing.T) {
 	              "resourceLimits": {
                     "cpuLimitEnabled": true,
                     "cpuLimitMaxCores": 20
+                  },
+				  "gcp": {
+                    "capacityReservationIds": ["123", "456"]
                   }
 				},
 				"version": "3",
@@ -173,6 +178,7 @@ func TestNodeTemplateResourceReadContext(t *testing.T) {
 	r.Nil(result)
 	r.False(result.HasError())
 	r.ElementsMatch(strings.Split(`ID = gpu
+clm_networking_mode = 
 cluster_id = b6bfc074-a267-400f-b8f1-db0850c369b1
 configuration_id = 7dc4f922-29c9-4377-889c-0c8c5fb8d497
 constraints.# = 1
@@ -233,6 +239,7 @@ constraints.0.dedicated_node_affinity.0.affinity.0.values.# = 1
 constraints.0.dedicated_node_affinity.0.affinity.0.values.0 = foo
 constraints.0.dedicated_node_affinity.0.az_name = eu-central-1a
 constraints.0.dedicated_node_affinity.0.cpus_per_gpu = 4
+constraints.0.dedicated_node_affinity.0.max_cpu = 96
 constraints.0.dedicated_node_affinity.0.instance_types.# = 1
 constraints.0.dedicated_node_affinity.0.instance_types.0 = m5.24xlarge
 constraints.0.dedicated_node_affinity.0.min_gpus_per_node = 2
@@ -253,6 +260,10 @@ constraints.0.storage_optimized = false
 constraints.0.storage_optimized_state = enabled
 constraints.0.use_spot_fallbacks = false
 constraints.0.aws.# = 0
+constraints.0.gcp.# = 1
+constraints.0.gcp.0.capacity_reservation_ids.# = 2
+constraints.0.gcp.0.capacity_reservation_ids.0 = 123
+constraints.0.gcp.0.capacity_reservation_ids.1 = 456
 constraints.0.bare_metal = unspecified
 custom_instances_enabled = true
 custom_instances_with_extended_memory_enabled = true
@@ -302,6 +313,7 @@ func Test_flattenNodeAffinity(t *testing.T) {
 				InstanceTypes:  &[]string{"e2"},
 				Name:           lo.ToPtr("linux-only"),
 				CpusPerGpu:     lo.ToPtr(int32(4)),
+				MaxCpu:         lo.ToPtr(int32(96)),
 				MinGpusPerNode: lo.ToPtr(int32(2)),
 			},
 		}
@@ -314,6 +326,7 @@ func Test_flattenNodeAffinity(t *testing.T) {
 				FieldNodeTemplateAzName:         "us-central1-c",
 				FieldNodeTemplateName:           "linux-only",
 				FieldNodeTemplateCpusPerGpu:     int32(4),
+				FieldNodeTemplateMaxCpu:         int32(96),
 				FieldNodeTemplateMinGpusPerNode: int32(2),
 				FieldNodeTemplateAffinityName: []map[string]any{
 					{
@@ -389,6 +402,7 @@ func Test_toTemplateConstraintsDedicatedAffinity(t *testing.T) {
 				FieldNodeTemplateAzName:         "us-central1-c",
 				FieldNodeTemplateInstanceTypes:  []any{"e2"},
 				FieldNodeTemplateCpusPerGpu:     4,
+				FieldNodeTemplateMaxCpu:         96,
 				FieldNodeTemplateMinGpusPerNode: 2,
 			},
 			want: &sdk.NodetemplatesV1TemplateConstraintsDedicatedNodeAffinity{
@@ -396,6 +410,7 @@ func Test_toTemplateConstraintsDedicatedAffinity(t *testing.T) {
 				AzName:         lo.ToPtr("us-central1-c"),
 				InstanceTypes:  &[]string{"e2"},
 				CpusPerGpu:     lo.ToPtr(int32(4)),
+				MaxCpu:         lo.ToPtr(int32(96)),
 				MinGpusPerNode: lo.ToPtr(int32(2)),
 			},
 		},
@@ -549,6 +564,95 @@ func TestNodeTemplateResourceReadContextEmptyList(t *testing.T) {
 	result := nodeTemplate.ReadContext(ctx, data, provider)
 
 	r.Nil(result)
+}
+
+const (
+	nodeTemplateTestClusterID       = "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	nodeTemplateTestEdgeLocation1ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	nodeTemplateTestEdgeLocation2ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+	nodeTemplateTestEdgeConfig1ID   = "c3d4e5f6-a7b8-9012-cdef-234567890123"
+)
+
+// nodeTemplateListResponse wraps a node template JSON body in the
+// list-node-templates API response.
+func nodeTemplateListResponse(template string) *http.Response {
+	body := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"items": [{"template": %s}]}`, template))))
+	return &http.Response{StatusCode: 200, Body: body, Header: map[string][]string{"Content-Type": {"json"}}}
+}
+
+// edgeLocationConfigValue builds the cty representation of one edge_location_config block.
+func edgeLocationConfigValue(edgeLocationID, edgeConfigID string) cty.Value {
+	return cty.ObjectVal(map[string]cty.Value{
+		FieldNodeTemplateEdgeLocationId: cty.StringVal(edgeLocationID),
+		FieldNodeTemplateEdgeConfigId:   cty.StringVal(edgeConfigID),
+	})
+}
+
+// edgeLocationConfigState builds the expected state representation of one
+// edge_location_config block.
+func edgeLocationConfigState(edgeLocationID, edgeConfigID string) map[string]any {
+	return map[string]any{
+		FieldNodeTemplateEdgeLocationId: edgeLocationID,
+		FieldNodeTemplateEdgeConfigId:   edgeConfigID,
+	}
+}
+
+func TestNodeTemplateResourceReadContext_edgeLocationConfig(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeLocation2 := nodeTemplateTestEdgeLocation2ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	// The response lists the entries in reverse order compared to the state.
+	templateResponse := fmt.Sprintf(`
+		{
+		  "name": "gpu",
+		  "isEnabled": true,
+		  "edgeLocationConfigs": [
+		    {"edgeLocationId": %q},
+		    {"edgeLocationId": %q, "edgeConfigId": %q}
+		  ]
+	    }
+	`, edgeLocation2, edgeLocation1, edgeConfig1)
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:        cty.StringVal(clusterId),
+		FieldNodeTemplateName: cty.StringVal("gpu"),
+		FieldNodeTemplateEdgeLocationConfig: cty.ListVal([]cty.Value{
+			edgeLocationConfigValue(edgeLocation1, edgeConfig1),
+			edgeLocationConfigValue(edgeLocation2, ""),
+		}),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = "gpu"
+
+	data := resource.Data(state)
+	result := resource.ReadContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// The read maps the reordered API response back into edge_location_config in the
+	// state's order, with the unset edge config stored as an empty string so plans stay clean.
+	r.Equal([]any{
+		edgeLocationConfigState(edgeLocation1, edgeConfig1),
+		edgeLocationConfigState(edgeLocation2, ""),
+	}, data.Get(FieldNodeTemplateEdgeLocationConfig))
 }
 
 func TestNodeTemplateResourceCreate_defaultNodeTemplate(t *testing.T) {
@@ -707,6 +811,702 @@ func TestNodeTemplateResourceCreate_customNodeTemplate(t *testing.T) {
 	r.False(result.HasError())
 }
 
+func TestNodeTemplateResourceReadContext_StuckPodResizeReconciliation(t *testing.T) {
+	testCases := []struct {
+		name             string
+		templateResponse string
+		expectEnabled    *bool // nil means the block should not be populated in state
+	}{
+		{
+			name: "spr enabled",
+			templateResponse: `
+			{
+			  "name": "custom-template",
+			  "isEnabled": true,
+			  "stuckPodResizeReconciliation": {
+			    "enabled": true
+			  }
+			}`,
+			expectEnabled: lo.ToPtr(true),
+		},
+		{
+			name: "spr disabled",
+			templateResponse: `
+			{
+			  "name": "custom-template",
+			  "isEnabled": true,
+			  "stuckPodResizeReconciliation": {
+			    "enabled": false
+			  }
+			}`,
+			expectEnabled: lo.ToPtr(false),
+		},
+		{
+			name: "spr object omitted",
+			templateResponse: `
+			{
+			  "name": "custom-template",
+			  "isEnabled": true
+			}`,
+			expectEnabled: nil,
+		},
+		{
+			name: "spr enabled is null",
+			templateResponse: `
+			{
+			  "name": "custom-template",
+			  "isEnabled": true,
+			  "stuckPodResizeReconciliation": {
+			    "enabled": null
+			  }
+			}`,
+			expectEnabled: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			mockctrl := gomock.NewController(t)
+			mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+			ctx := context.Background()
+			provider := &ProviderConfig{
+				api: &sdk.ClientWithResponses{
+					ClientInterface: mockClient,
+				},
+			}
+
+			clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+			listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+			{
+			  "items": [
+			    {
+			      "template": %s
+			    }
+			  ]
+			}`, tc.templateResponse))))
+
+			mockClient.EXPECT().
+				NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+				Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+			resource := resourceNodeTemplate()
+			val := cty.ObjectVal(map[string]cty.Value{
+				FieldClusterId:        cty.StringVal(clusterId),
+				FieldNodeTemplateName: cty.StringVal("custom-template"),
+			})
+			state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+			state.ID = "custom-template"
+
+			data := resource.Data(state)
+			result := resource.ReadContext(ctx, data, provider)
+			r.Nil(result)
+			r.False(result.HasError())
+
+			blocks := data.Get(FieldNodeTemplateStuckPodResizeReconciliation).([]any)
+			if tc.expectEnabled == nil {
+				r.Empty(blocks)
+				return
+			}
+
+			r.Len(blocks, 1)
+			block := blocks[0].(map[string]any)
+			r.Equal(*tc.expectEnabled, block[FieldNodeTemplateStuckPodResizeEnabled])
+		})
+	}
+}
+
+func TestNodeTemplateResourceCreate_StuckPodResizeReconciliation(t *testing.T) {
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	name := "custom-template"
+
+	testCases := []struct {
+		name           string
+		configSPR      *bool
+		expectedInBody *bool // nil means the field must be omitted from the request
+	}{
+		{name: "block enabled", configSPR: lo.ToPtr(true), expectedInBody: lo.ToPtr(true)},
+		{name: "block disabled", configSPR: lo.ToPtr(false), expectedInBody: lo.ToPtr(false)},
+		{name: "block omitted", configSPR: nil, expectedInBody: nil},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			mockctrl := gomock.NewController(t)
+			mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+			ctx := context.Background()
+			provider := &ProviderConfig{
+				api: &sdk.ClientWithResponses{
+					ClientInterface: mockClient,
+				},
+			}
+
+			var sprJSON string
+			if tc.configSPR != nil {
+				sprJSON = fmt.Sprintf(`"stuckPodResizeReconciliation": {"enabled": %t},`, *tc.configSPR)
+			}
+			templateResponse := fmt.Sprintf(`
+			{
+			  "name": "custom-template",
+			  "isEnabled": true,
+			  %s
+			  "constraints": {}
+			}`, sprJSON)
+
+			templateBody := io.NopCloser(bytes.NewReader([]byte(templateResponse)))
+			listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+			{
+			  "items": [
+            {
+              "template": %s
+            }
+			  ]
+			}`, templateResponse))))
+
+			var capturedBody sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody
+			mockClient.EXPECT().
+				NodeTemplatesAPICreateNodeTemplate(gomock.Any(), clusterId, gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ string, body sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+					capturedBody = body
+					return &http.Response{StatusCode: 200, Body: templateBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil
+				})
+			mockClient.EXPECT().
+				NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+				Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+			resource := resourceNodeTemplate()
+			configAttrs := map[string]cty.Value{
+				FieldClusterId:        cty.StringVal(clusterId),
+				FieldNodeTemplateName: cty.StringVal(name),
+			}
+			if tc.configSPR != nil {
+				configAttrs[FieldNodeTemplateStuckPodResizeReconciliation] = cty.ListVal([]cty.Value{
+					cty.ObjectVal(map[string]cty.Value{FieldNodeTemplateStuckPodResizeEnabled: cty.BoolVal(*tc.configSPR)}),
+				})
+			}
+			state := sdkterraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(configAttrs), 0)
+			state.ID = name
+
+			data := resource.Data(state)
+			result := resource.CreateContext(ctx, data, provider)
+			r.Nil(result)
+			r.False(result.HasError())
+
+			if tc.expectedInBody == nil {
+				r.Nil(capturedBody.StuckPodResizeReconciliation)
+				return
+			}
+			r.NotNil(capturedBody.StuckPodResizeReconciliation)
+			r.NotNil(capturedBody.StuckPodResizeReconciliation.Enabled)
+			r.Equal(*tc.expectedInBody, *capturedBody.StuckPodResizeReconciliation.Enabled)
+		})
+	}
+}
+
+func TestNodeTemplateResourceDiff_StuckPodResizeReconciliation(t *testing.T) {
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	name := "custom-template"
+
+	testCases := []struct {
+		name       string
+		stateSPR   *bool
+		configSPR  *bool
+		expectDiff bool
+	}{
+		{name: "config omitted, state unset", stateSPR: nil, configSPR: nil, expectDiff: false},
+		{name: "config enabled=false, state unset: suppressed", stateSPR: nil, configSPR: lo.ToPtr(false), expectDiff: false},
+		{name: "config omitted, state enabled=false: suppressed", stateSPR: lo.ToPtr(false), configSPR: nil, expectDiff: false},
+		{name: "config enabled=true, state unset", stateSPR: nil, configSPR: lo.ToPtr(true), expectDiff: true},
+		{name: "config enabled=false, state enabled=true", stateSPR: lo.ToPtr(true), configSPR: lo.ToPtr(false), expectDiff: true},
+		{name: "config omitted, state enabled=true", stateSPR: lo.ToPtr(true), configSPR: nil, expectDiff: true},
+		{name: "config enabled=true, state enabled=true", stateSPR: lo.ToPtr(true), configSPR: lo.ToPtr(true), expectDiff: false},
+		{name: "config enabled=false, state enabled=false", stateSPR: lo.ToPtr(false), configSPR: lo.ToPtr(false), expectDiff: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+
+			stateAttrs := map[string]cty.Value{
+				FieldClusterId:        cty.StringVal(clusterId),
+				FieldNodeTemplateName: cty.StringVal(name),
+			}
+			if tc.stateSPR != nil {
+				stateAttrs[FieldNodeTemplateStuckPodResizeReconciliation] = cty.ListVal([]cty.Value{
+					cty.ObjectVal(map[string]cty.Value{FieldNodeTemplateStuckPodResizeEnabled: cty.BoolVal(*tc.stateSPR)}),
+				})
+			}
+			state := sdkterraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(stateAttrs), 0)
+			state.ID = name
+
+			configRaw := map[string]interface{}{
+				FieldClusterId:        clusterId,
+				FieldNodeTemplateName: name,
+			}
+			if tc.configSPR != nil {
+				configRaw[FieldNodeTemplateStuckPodResizeReconciliation] = []interface{}{
+					map[string]interface{}{FieldNodeTemplateStuckPodResizeEnabled: *tc.configSPR},
+				}
+			}
+			config := sdkterraform.NewResourceConfigRaw(configRaw)
+
+			diff, err := resourceNodeTemplate().Diff(context.Background(), state, config, nil)
+			r.NoError(err)
+
+			var sprKeys []string
+			if diff != nil {
+				for k := range diff.Attributes {
+					if strings.HasPrefix(k, FieldNodeTemplateStuckPodResizeReconciliation) {
+						sprKeys = append(sprKeys, k)
+					}
+				}
+			}
+
+			if tc.expectDiff {
+				r.NotEmpty(sprKeys)
+			} else {
+				r.Empty(sprKeys)
+			}
+		})
+	}
+}
+
+func Test_stuckPodResizeDisabled(t *testing.T) {
+	testCases := []struct {
+		name           string
+		list           []any
+		expectDisabled bool
+		expectErr      bool
+	}{
+		{name: "empty list", list: []any{}, expectDisabled: true},
+		{name: "nil list", list: nil, expectDisabled: true},
+		{name: "block enabled=false", list: []any{map[string]any{FieldNodeTemplateStuckPodResizeEnabled: false}}, expectDisabled: true},
+		{name: "block enabled=true", list: []any{map[string]any{FieldNodeTemplateStuckPodResizeEnabled: true}}},
+		{name: "block not a map", list: []any{nil}, expectErr: true},
+		{name: "enabled not a bool", list: []any{map[string]any{FieldNodeTemplateStuckPodResizeEnabled: "false"}}, expectErr: true},
+		{name: "enabled missing", list: []any{map[string]any{}}, expectErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+
+			disabled, err := stuckPodResizeDisabled(tc.list)
+			if tc.expectErr {
+				r.Error(err)
+				return
+			}
+			r.NoError(err)
+			r.Equal(tc.expectDisabled, disabled)
+		})
+	}
+}
+
+func TestNodeTemplateResourceCreate_edgeLocationConfig(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeLocation2 := nodeTemplateTestEdgeLocation2ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	// The response lists the entries in reverse order compared to the configuration.
+	templateResponse := fmt.Sprintf(`
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "name": %q,
+		  "isEnabled": false,
+		  "shouldTaint": true,
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  },
+		  "edgeLocationConfigs": [
+		    {"edgeLocationId": %q},
+		    {"edgeLocationId": %q, "edgeConfigId": %q}
+		  ]
+	    }
+	`, name, edgeLocation2, edgeLocation1, edgeConfig1)
+
+	var capturedCreateBody sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody
+	mockClient.EXPECT().
+		NodeTemplatesAPICreateNodeTemplate(gomock.Any(), clusterId, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, clusterId string, body sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody, reqEditors ...sdk.RequestEditorFn) (*http.Response, error) {
+			capturedCreateBody = body
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:        cty.StringVal(clusterId),
+		FieldNodeTemplateName: cty.StringVal(name),
+		FieldNodeTemplateEdgeLocationConfig: cty.ListVal([]cty.Value{
+			edgeLocationConfigValue(edgeLocation1, edgeConfig1),
+			edgeLocationConfigValue(edgeLocation2, ""),
+		}),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+
+	data := resource.Data(state)
+	result := resource.CreateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// The create request carries the configured edge location configs, with the
+	// location-only entry omitting edgeConfigId entirely.
+	r.NotNil(capturedCreateBody.EdgeLocationConfigs)
+	r.Equal([]sdk.NodetemplatesV1EdgeLocationConfig{
+		{EdgeLocationId: toPtr(edgeLocation1), EdgeConfigId: toPtr(edgeConfig1)},
+		{EdgeLocationId: toPtr(edgeLocation2)},
+	}, *capturedCreateBody.EdgeLocationConfigs)
+
+	// The read maps the reordered API response back into edge_location_config in the
+	// configuration's order, with the unset edge config stored as an empty string.
+	r.Equal([]any{
+		edgeLocationConfigState(edgeLocation1, edgeConfig1),
+		edgeLocationConfigState(edgeLocation2, ""),
+	}, data.Get(FieldNodeTemplateEdgeLocationConfig))
+}
+
+func TestNodeTemplateResourceUpdate_edgeLocationConfig(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	templateResponse := fmt.Sprintf(`
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "name": %q,
+		  "isEnabled": false,
+		  "shouldTaint": true,
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  },
+		  "edgeLocationConfigs": [
+		    {"edgeLocationId": %q, "edgeConfigId": %q}
+		  ]
+	    }
+	`, name, edgeLocation1, edgeConfig1)
+
+	var capturedUpdateBody sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, clusterId, nodeTemplateName string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, reqEditors ...sdk.RequestEditorFn) (*http.Response, error) {
+			capturedUpdateBody = body
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	data := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{
+		FieldClusterId:        clusterId,
+		FieldNodeTemplateName: name,
+		FieldNodeTemplateEdgeLocationConfig: []any{
+			map[string]any{
+				FieldNodeTemplateEdgeLocationId: edgeLocation1,
+				FieldNodeTemplateEdgeConfigId:   edgeConfig1,
+			},
+		},
+	})
+	data.SetId(name)
+
+	result := resource.UpdateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// The switch is sent as EdgeLocationConfigs; the deprecated EdgeLocationIds stays unset.
+	r.NotNil(capturedUpdateBody.EdgeLocationConfigs)
+	r.Equal([]sdk.NodetemplatesV1EdgeLocationConfig{
+		{EdgeLocationId: toPtr(edgeLocation1), EdgeConfigId: toPtr(edgeConfig1)},
+	}, *capturedUpdateBody.EdgeLocationConfigs)
+	r.Nil(capturedUpdateBody.EdgeLocationIds)
+
+	// The read populates edge_location_config from the API response.
+	r.Equal([]any{
+		edgeLocationConfigState(edgeLocation1, edgeConfig1),
+	}, data.Get(FieldNodeTemplateEdgeLocationConfig))
+}
+
+func TestNodeTemplateResourceUpdate_edgeLocationIDs(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeLocation2 := nodeTemplateTestEdgeLocation2ID
+
+	// The response lists the locations in reverse order compared to the configuration.
+	templateResponse := fmt.Sprintf(`
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "name": %q,
+		  "isEnabled": true,
+		  "shouldTaint": true,
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  },
+		  "edgeLocationIds": [%q, %q]
+	    }
+	`, name, edgeLocation2, edgeLocation1)
+
+	var capturedUpdateBody sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, clusterId, nodeTemplateName string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, reqEditors ...sdk.RequestEditorFn) (*http.Response, error) {
+			capturedUpdateBody = body
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	data := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{
+		FieldClusterId:                   clusterId,
+		FieldNodeTemplateName:            name,
+		FieldNodeTemplateIsEnabled:       true,
+		FieldNodeTemplateEdgeLocationIDs: []any{edgeLocation1, edgeLocation2},
+	})
+	data.SetId(name)
+
+	result := resource.UpdateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// Legacy edge_location_ids are sent as location-only EdgeLocationConfigs entries.
+	r.NotNil(capturedUpdateBody.EdgeLocationConfigs)
+	r.Equal([]sdk.NodetemplatesV1EdgeLocationConfig{
+		{EdgeLocationId: toPtr(edgeLocation1)},
+		{EdgeLocationId: toPtr(edgeLocation2)},
+	}, *capturedUpdateBody.EdgeLocationConfigs)
+	r.Nil(capturedUpdateBody.EdgeLocationIds)
+
+	// The read maps the reordered legacy response back into edge_location_ids in the
+	// configuration's order, so legacy configurations keep planning clean.
+	r.Equal([]any{edgeLocation1, edgeLocation2}, data.Get(FieldNodeTemplateEdgeLocationIDs))
+}
+
+func TestNodeTemplateResourceReadContext_edgeLocationConfigImport(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	// A freshly imported template carries no edge location state, so entries that pair
+	// locations with edge configurations are surfaced as edge_location_config.
+	templateResponse := fmt.Sprintf(`
+		{
+		  "name": "gpu",
+		  "isEnabled": true,
+		  "edgeLocationConfigs": [
+		    {"edgeLocationId": %q, "edgeConfigId": %q}
+		  ]
+	    }
+	`, edgeLocation1, edgeConfig1)
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:        cty.StringVal(clusterId),
+		FieldNodeTemplateName: cty.StringVal("gpu"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = "gpu"
+
+	data := resource.Data(state)
+	result := resource.ReadContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	r.Equal([]any{
+		edgeLocationConfigState(edgeLocation1, edgeConfig1),
+	}, data.Get(FieldNodeTemplateEdgeLocationConfig))
+	r.Empty(data.Get(FieldNodeTemplateEdgeLocationIDs))
+}
+
+func TestNodeTemplateResourceReadContext_edgeLocationIDsOutOfBandConfig(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeLocation2 := nodeTemplateTestEdgeLocation2ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	// The template gained an edge configuration out of band while the configuration
+	// still uses the deprecated edge_location_ids form.
+	templateResponse := fmt.Sprintf(`
+		{
+		  "name": "gpu",
+		  "isEnabled": true,
+		  "edgeLocationConfigs": [
+		    {"edgeLocationId": %q, "edgeConfigId": %q},
+		    {"edgeLocationId": %q}
+		  ]
+	    }
+	`, edgeLocation1, edgeConfig1, edgeLocation2)
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:        cty.StringVal(clusterId),
+		FieldNodeTemplateName: cty.StringVal("gpu"),
+		FieldNodeTemplateEdgeLocationIDs: cty.ListVal([]cty.Value{
+			cty.StringVal(edgeLocation1),
+			cty.StringVal(edgeLocation2),
+		}),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = "gpu"
+
+	data := resource.Data(state)
+	result := resource.ReadContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// The out-of-band edge configuration cannot be represented by edge_location_ids, so it
+	// is surfaced as edge_location_config where the next plan shows it being removed.
+	r.Equal([]any{
+		edgeLocationConfigState(edgeLocation1, edgeConfig1),
+		edgeLocationConfigState(edgeLocation2, ""),
+	}, data.Get(FieldNodeTemplateEdgeLocationConfig))
+	// The configured legacy field keeps its values.
+	r.Equal([]any{edgeLocation1, edgeLocation2}, data.Get(FieldNodeTemplateEdgeLocationIDs))
+}
+
+func TestNodeTemplateResourceUpdate_edgeLocationConfigCleared(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := nodeTemplateTestClusterID
+	edgeLocation1 := nodeTemplateTestEdgeLocation1ID
+	edgeConfig1 := nodeTemplateTestEdgeConfig1ID
+
+	templateResponse := fmt.Sprintf(`
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "name": %q,
+		  "isEnabled": true,
+		  "shouldTaint": true,
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`, name)
+
+	var capturedUpdateBody sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, clusterId, nodeTemplateName string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, reqEditors ...sdk.RequestEditorFn) (*http.Response, error) {
+			capturedUpdateBody = body
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(nodeTemplateListResponse(templateResponse), nil)
+
+	resource := resourceNodeTemplate()
+	data := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{
+		FieldClusterId:        clusterId,
+		FieldNodeTemplateName: name,
+		FieldNodeTemplateEdgeLocationConfig: []any{
+			map[string]any{
+				FieldNodeTemplateEdgeLocationId: edgeLocation1,
+				FieldNodeTemplateEdgeConfigId:   edgeConfig1,
+			},
+		},
+	})
+	data.SetId(name)
+
+	// Simulate the diff produced by removing every edge_location_config block.
+	r.NoError(data.Set(FieldNodeTemplateEdgeLocationConfig, []any{}))
+
+	result := resource.UpdateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+
+	// The update sends an empty list so the API drops the associations instead of
+	// leaving them stale in state.
+	r.NotNil(capturedUpdateBody.EdgeLocationConfigs)
+	r.Empty(*capturedUpdateBody.EdgeLocationConfigs)
+}
+
 func TestNodeTemplateResourceDelete_defaultNodeTemplate(t *testing.T) {
 	r := require.New(t)
 	mockctrl := gomock.NewController(t)
@@ -778,10 +1578,851 @@ func TestNodeTemplateResourceDelete_defaultNodeTemplate(t *testing.T) {
 		" false).", result[0].Detail)
 }
 
+func TestClmNetworkingModeDefaultAccepted(t *testing.T) {
+	r := require.New(t)
+	field := resourceNodeTemplate().Schema[FieldNodeTemplateClmNetworkingMode]
+	diags := field.ValidateDiagFunc("default", cty.Path{cty.GetAttrStep{Name: FieldNodeTemplateClmNetworkingMode}})
+	r.False(diags.HasError(), "expected 'default' to be accepted by the schema validator")
+}
+
+func TestClmNetworkingModeEmptyStringRejected(t *testing.T) {
+	// An explicit empty string must be rejected at plan time: GetOk treats ""
+	// as unset, so the field would be omitted from the request and a non-empty
+	// state value (e.g. "tc") would never converge — a perpetual diff.
+	// The reset path is to set "default" explicitly.
+	r := require.New(t)
+	field := resourceNodeTemplate().Schema[FieldNodeTemplateClmNetworkingMode]
+	diags := field.ValidateDiagFunc("", cty.Path{cty.GetAttrStep{Name: FieldNodeTemplateClmNetworkingMode}})
+	r.True(diags.HasError(), "expected empty string to be rejected by the schema validator")
+}
+
+func TestClmNetworkingModeAllValidModesAccepted(t *testing.T) {
+	r := require.New(t)
+	field := resourceNodeTemplate().Schema[FieldNodeTemplateClmNetworkingMode]
+	for _, mode := range []string{"none", "tc", "cni"} {
+		diags := field.ValidateDiagFunc(mode, cty.Path{cty.GetAttrStep{Name: FieldNodeTemplateClmNetworkingMode}})
+		r.False(diags.HasError(), "expected %q to be accepted by the schema validator", mode)
+	}
+}
+
+func TestClmNetworkingModeInvalidValueRejected(t *testing.T) {
+	r := require.New(t)
+	field := resourceNodeTemplate().Schema[FieldNodeTemplateClmNetworkingMode]
+	diags := field.ValidateDiagFunc("bogus", cty.Path{cty.GetAttrStep{Name: FieldNodeTemplateClmNetworkingMode}})
+	r.True(diags.HasError(), "expected 'bogus' to be rejected by the schema validator")
+}
+
+func TestClmNetworkingModeCaseSensitive(t *testing.T) {
+	// The validator is case-sensitive: "CNI" must be rejected so users get an
+	// early plan-time error instead of a silent API-side default.
+	r := require.New(t)
+	field := resourceNodeTemplate().Schema[FieldNodeTemplateClmNetworkingMode]
+	diags := field.ValidateDiagFunc("CNI", cty.Path{cty.GetAttrStep{Name: FieldNodeTemplateClmNetworkingMode}})
+	r.True(diags.HasError(), "expected 'CNI' (uppercase) to be rejected by the schema validator")
+}
+
+func TestClmNetworkingModeFromConfig(t *testing.T) {
+	newData := func(configAttrs map[string]cty.Value) *schema.ResourceData {
+		state := sdkterraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+			FieldClusterId:        cty.StringVal("b6bfc074-a267-400f-b8f1-db0850c369b1"),
+			FieldNodeTemplateName: cty.StringVal("custom-template"),
+		}), 0)
+		state.ID = "custom-template"
+		state.RawConfig = cty.ObjectVal(configAttrs)
+		return resourceNodeTemplate().Data(state)
+	}
+
+	tests := []struct {
+		name        string
+		configAttrs map[string]cty.Value
+		expected    *string
+	}{
+		{
+			name:        "set in config",
+			configAttrs: map[string]cty.Value{FieldNodeTemplateClmNetworkingMode: cty.StringVal("tc")},
+			expected:    lo.ToPtr("tc"),
+		},
+		{
+			// Production shape: Terraform core sends unset Optional attributes
+			// as explicit nulls in the configuration object.
+			name:        "null in config (attribute not set)",
+			configAttrs: map[string]cty.Value{FieldNodeTemplateClmNetworkingMode: cty.NullVal(cty.String)},
+			expected:    nil,
+		},
+		{
+			name:        "absent from config object",
+			configAttrs: map[string]cty.Value{},
+			expected:    nil,
+		},
+		{
+			name:        "unknown value",
+			configAttrs: map[string]cty.Value{FieldNodeTemplateClmNetworkingMode: cty.UnknownVal(cty.String)},
+			expected:    nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			got := clmNetworkingModeFromConfig(newData(tc.configAttrs))
+			if tc.expected == nil {
+				r.Nil(got)
+				return
+			}
+			r.NotNil(got)
+			r.Equal(*tc.expected, *got)
+		})
+	}
+
+	// Data built without any RawConfig (e.g. for a plain read) must not panic
+	// and must yield nil.
+	t.Run("no raw config", func(t *testing.T) {
+		r := require.New(t)
+		state := sdkterraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+			FieldClusterId:        cty.StringVal("b6bfc074-a267-400f-b8f1-db0850c369b1"),
+			FieldNodeTemplateName: cty.StringVal("custom-template"),
+		}), 0)
+		state.ID = "custom-template"
+		r.Nil(clmNetworkingModeFromConfig(resourceNodeTemplate().Data(state)))
+	})
+}
+
+func TestNodeTemplateResourceRead_clmNetworkingModeNilResponse(t *testing.T) {
+	// Pins the nil-handling contract in resourceNodeTemplateRead: a nil API
+	// value must converge the state to "" even when the prior state holds a
+	// non-empty mode. A skip-on-nil Set would leave stale "tc" in state and
+	// drift against the API.
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	// The response omits clmNetworkingMode entirely (nil pointer).
+	body := io.NopCloser(bytes.NewReader([]byte(`
+		{
+		  "items": [
+			{
+			  "template": {
+				"configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+				"configurationName": "default",
+				"name": "custom-template",
+				"isEnabled": true,
+				"constraints": {
+				  "spot": false,
+				  "onDemand": true,
+				  "minCpu": 10,
+				  "maxCpu": 10000
+				},
+				"version": "1",
+				"shouldTaint": false,
+				"customLabels": {},
+				"customTaints": [],
+				"rebalancingConfig": {
+				  "minNodes": 0
+				}
+			  }
+			}
+		  ]
+		}
+	`)))
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: body, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	resource := resourceNodeTemplate()
+	// Prior state holds a non-empty mode; the API response above returns nil.
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                     cty.StringVal(clusterId),
+		FieldNodeTemplateName:              cty.StringVal("custom-template"),
+		FieldNodeTemplateClmNetworkingMode: cty.StringVal("tc"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = "custom-template"
+
+	data := resource.Data(state)
+	result := resource.ReadContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Equal("", data.Get(FieldNodeTemplateClmNetworkingMode), "nil API response must converge prior non-empty state to empty")
+}
+
+func TestNodeTemplateResourceCreate_withClmNetworkingMode(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": true,
+		  "clmNetworkingMode": "tc",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "1",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`
+
+	templateBody := io.NopCloser(bytes.NewReader([]byte(templateResponse)))
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+	mockClient.EXPECT().
+		NodeTemplatesAPICreateNodeTemplate(gomock.Any(), clusterId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, body sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			if body.ClmNetworkingMode == nil || *body.ClmNetworkingMode != "tc" {
+				return nil, fmt.Errorf("expected clmNetworkingMode = tc, got %v", body.ClmNetworkingMode)
+			}
+			return &http.Response{StatusCode: 200, Body: templateBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(true),
+		FieldNodeTemplateClmNetworkingMode:                        cty.StringVal("tc"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The shim only populates state attributes; clmNetworkingModeFromConfig
+	// reads the user configuration from RawConfig, so it must be set explicitly.
+	state.RawConfig = val
+
+	data := resource.Data(state)
+	result := resource.CreateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Equal("tc", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceCreate_withoutClmNetworkingMode(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": true,
+		  "clmNetworkingMode": "default",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "1",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`
+
+	templateBody := io.NopCloser(bytes.NewReader([]byte(templateResponse)))
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+	mockClient.EXPECT().
+		NodeTemplatesAPICreateNodeTemplate(gomock.Any(), clusterId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, body sdk.NodeTemplatesAPICreateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			if body.ClmNetworkingMode != nil {
+				return nil, fmt.Errorf("expected clmNetworkingMode to be nil, got %v", *body.ClmNetworkingMode)
+			}
+			return &http.Response{StatusCode: 200, Body: templateBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(true),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The configuration omits clm_networking_mode entirely.
+	state.RawConfig = val
+
+	data := resource.Data(state)
+	result := resource.CreateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+	// The read-back should have populated the state with the backend default ("default")
+	r.Equal("default", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceUpdate_changeClmNetworkingMode(t *testing.T) {
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": true,
+		  "clmNetworkingMode": "cni",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "2",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`
+
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			if body.ClmNetworkingMode == nil || *body.ClmNetworkingMode != "cni" {
+				return nil, fmt.Errorf("expected clmNetworkingMode = cni, got %v", body.ClmNetworkingMode)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(true),
+		FieldNodeTemplateClmNetworkingMode:                        cty.StringVal("cni"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The configuration sets the new mode; the helper reads it from RawConfig.
+	state.RawConfig = val
+
+	data := resource.Data(state)
+	data.SetId(name)
+	result := updateNodeTemplate(ctx, data, provider, true)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Equal("cni", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceUpdate_legacyDefaultInState(t *testing.T) {
+	// Simulates production: every node template in the DB has
+	// clmNetworkingMode = "default" (legacy value). The config does not set
+	// the field; an update is triggered by another field. The provider must
+	// send null (not echo the state value): the API resolves a null mode on
+	// update to "keep the existing mode", keeping the wire payload identical
+	// to what this provider sent before the field existed.
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": true,
+		  "clmNetworkingMode": "default",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "2",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`
+
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	var sentMode *string
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			sentMode = body.ClmNetworkingMode
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(true),
+		// Post-refresh state carries the legacy DB value; config does not set the field.
+		FieldNodeTemplateClmNetworkingMode: cty.StringVal("default"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The configuration omits the attribute: Terraform core sends unset
+	// Optional attributes as explicit nulls in the config object.
+	state.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                     cty.StringVal(clusterId),
+		FieldNodeTemplateName:              cty.StringVal(name),
+		FieldNodeTemplateClmNetworkingMode: cty.NullVal(cty.String),
+	})
+
+	data := resource.Data(state)
+	data.SetId(name)
+	result := updateNodeTemplate(ctx, data, provider, true)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Nil(sentMode, "clm_networking_mode must not be sent when absent from config; null lets the API keep the stored mode")
+	r.Equal("default", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceUpdate_clmDisabledLegacyDefault(t *testing.T) {
+	// The clm_enabled=false case: CLM is off, the field is not set in
+	// config, and the refreshed state carries the legacy DB value
+	// ("default" — the column is NOT NULL DEFAULT 'default'). The provider
+	// sends null on the wire; the API falls back to the stored mode, so the
+	// value round-trips with no diff and no behavior change for CLM-disabled
+	// templates.
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": false,
+		  "clmNetworkingMode": "default",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "2",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+		    }
+	`
+
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	var sentMode *string
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			sentMode = body.ClmNetworkingMode
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(false),
+		// Post-refresh state carries the legacy DB value; config does not set the field.
+		FieldNodeTemplateClmNetworkingMode: cty.StringVal("default"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The configuration omits the attribute (explicit null).
+	state.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                     cty.StringVal(clusterId),
+		FieldNodeTemplateName:              cty.StringVal(name),
+		FieldNodeTemplateClmNetworkingMode: cty.NullVal(cty.String),
+	})
+
+	data := resource.Data(state)
+	data.SetId(name)
+	result := updateNodeTemplate(ctx, data, provider, true)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Nil(sentMode, "clm_networking_mode must not be sent when CLM is disabled and the field is absent from config")
+	r.Equal("default", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceUpdate_clmDisabledWithModeSet(t *testing.T) {
+	// clm_enabled=false with an explicit mode in config: the backend stores
+	// the mode regardless of clm_enabled (the CLM gate lives in the
+	// provisioner's node labeling, not in template storage) and echoes it
+	// back, so the value round-trips with no diff. This test documents that
+	// behavior; if the backend ever started dropping the value, this test's
+	// assertion on the echoed response would surface the drift risk.
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": false,
+		  "clmNetworkingMode": "tc",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "2",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+		    }
+	`
+
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	var sentMode *string
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			sentMode = body.ClmNetworkingMode
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(false),
+		FieldNodeTemplateClmNetworkingMode:                        cty.StringVal("tc"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	// The configuration sets the mode explicitly.
+	state.RawConfig = val
+
+	data := resource.Data(state)
+	data.SetId(name)
+	result := updateNodeTemplate(ctx, data, provider, true)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.NotNil(sentMode, "explicit mode must be sent even when clm_enabled=false")
+	r.Equal("tc", *sentMode)
+	r.Equal("tc", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
+func TestNodeTemplateResourceUpdate_explicitDefaultResetsMode(t *testing.T) {
+	// The documented reset path: the refreshed state holds "tc" while the
+	// configuration sets clm_networking_mode = "default". The provider must
+	// send the explicit "default" so the API overwrites the stored mode; a
+	// null would fall back to keeping the existing "tc".
+	r := require.New(t)
+	mockctrl := gomock.NewController(t)
+	mockClient := mock_sdk.NewMockClientInterface(mockctrl)
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+
+	name := "custom-template"
+	clusterId := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	templateResponse := `
+		{
+		  "configurationId": "7dc4f922-29c9-4377-889c-0c8c5fb8d497",
+		  "configurationName": "default",
+		  "name": "custom-template",
+		  "isEnabled": true,
+		  "clmEnabled": true,
+		  "clmNetworkingMode": "default",
+		  "constraints": {
+		    "spot": false,
+		    "onDemand": true,
+		    "minCpu": 10,
+		    "maxCpu": 10000,
+		    "architectures": ["amd64", "arm64"],
+		    "resourceLimits": {
+		      "cpuLimitEnabled": true,
+		      "cpuLimitMaxCores": 20
+		    }
+		  },
+		  "version": "2",
+		  "shouldTaint": false,
+		  "customLabels": {},
+		  "customTaints": [],
+		  "rebalancingConfig": {
+		    "minNodes": 0
+		  }
+	    }
+	`
+
+	listBody := io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`
+		{
+		  "items": [
+            {
+              "template": %s
+            }
+		  ]
+		}
+	`, templateResponse))))
+
+	mockClient.EXPECT().
+		NodeTemplatesAPIListNodeTemplates(gomock.Any(), clusterId, &sdk.NodeTemplatesAPIListNodeTemplatesParams{IncludeDefault: lo.ToPtr(true)}).
+		Return(&http.Response{StatusCode: 200, Body: listBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+	mockClient.EXPECT().
+		NodeTemplatesAPIUpdateNodeTemplate(gomock.Any(), clusterId, name, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, body sdk.NodeTemplatesAPIUpdateNodeTemplateJSONRequestBody, _ ...any) (*http.Response, error) {
+			if body.ClmNetworkingMode == nil || *body.ClmNetworkingMode != "default" {
+				return nil, fmt.Errorf("expected clmNetworkingMode = default, got %v", body.ClmNetworkingMode)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(templateResponse))), Header: map[string][]string{"Content-Type": {"json"}}}, nil
+		})
+
+	resource := resourceNodeTemplate()
+	// Post-refresh state holds "tc"; the configuration explicitly sets "default".
+	val := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                                            cty.StringVal(clusterId),
+		FieldNodeTemplateName:                                     cty.StringVal(name),
+		FieldNodeTemplateIsDefault:                                cty.BoolVal(false),
+		FieldNodeTemplateIsEnabled:                                cty.BoolVal(true),
+		FieldNodeTemplateCustomInstancesEnabled:                   cty.BoolVal(false),
+		FieldNodeTemplateCustomInstancesWithExtendedMemoryEnabled: cty.BoolVal(false),
+		FieldNodeTemplateClmEnabled:                               cty.BoolVal(true),
+		FieldNodeTemplateClmNetworkingMode:                        cty.StringVal("tc"),
+	})
+	configVal := cty.ObjectVal(map[string]cty.Value{
+		FieldClusterId:                     cty.StringVal(clusterId),
+		FieldNodeTemplateName:              cty.StringVal(name),
+		FieldNodeTemplateClmNetworkingMode: cty.StringVal("default"),
+	})
+	state := sdkterraform.NewInstanceStateShimmedFromValue(val, 0)
+	state.ID = name
+	state.RawConfig = configVal
+
+	data := resource.Data(state)
+	data.SetId(name)
+	result := updateNodeTemplate(ctx, data, provider, true)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Equal("default", data.Get(FieldNodeTemplateClmNetworkingMode))
+}
+
 func TestAccEKS_ResourceNodeTemplate_basic(t *testing.T) {
 	rName := fmt.Sprintf("%v-node-template-%v", ResourcePrefix, acctest.RandString(8))
 	resourceName := "castai_node_template.test"
-	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "cost-terraform")
+	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "core-tf-acc-21-08-2025")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -966,51 +2607,143 @@ func TestAccEKS_ResourceNodeTemplate_basic(t *testing.T) {
 	})
 }
 
-func testAccNodeTemplateConfig(rName, clusterName string) string {
-	return ConfigCompose(testAccEKSClusterConfig(rName, clusterName), testAccNodeConfig(rName), testAccEdgeLocationsConfig(rName, clusterName), fmt.Sprintf(`
-		resource "castai_node_template" "test" {
-			cluster_id        = castai_eks_cluster.test.id
-			name = %[1]q
-			configuration_id = castai_node_configuration.test.id
-			should_taint = true
-			clm_enabled = false
+func TestAccEKS_ResourceNodeTemplate_edgeLocationConfig(t *testing.T) {
+	rName := fmt.Sprintf("%v-node-template-%v", ResourcePrefix, acctest.RandString(8))
+	resourceName := "castai_node_template.test"
+	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "core-tf-acc-21-08-2025")
 
-			custom_labels = {
-				%[1]s-label-key-1 = "%[1]s-label-value-1"
-				%[1]s-label-key-2 = "%[1]s-label-value-2"
-			}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckNodeTemplateDestroy(rName),
+		Steps: []resource.TestStep{
+			{
+				// New block only: one entry with an edge config, one without.
+				Config: testAccNodeTemplateEdgeLocationConfigConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_ids.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.#", "2"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_location_id", "castai_edge_location.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_config_id", "castai_edge_configuration.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.1.edge_location_id", "castai_edge_location.test_2", "id"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.1.edge_config_id", ""),
+				),
+			},
+			{
+				// The previously unset edge config is now set.
+				Config: testAccNodeTemplateEdgeLocationConfigUpdatedConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_ids.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.#", "2"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_location_id", "castai_edge_location.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_config_id", "castai_edge_configuration.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.1.edge_location_id", "castai_edge_location.test_2", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.1.edge_config_id", "castai_edge_configuration.test_2", "id"),
+				),
+			},
+			{
+				// Every edge location is removed from the configuration.
+				Config: testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, "", false),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_ids.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.#", "0"),
+				),
+			},
+		},
+		ExternalProviders: map[string]resource.ExternalProvider{
+			"aws": {
+				Source:            "hashicorp/aws",
+				VersionConstraint: "~> 4.0",
+			},
+		},
+	})
+}
 
-			custom_taints {
-				key = "%[1]s-taint-key-1"
-				value = "%[1]s-taint-value-1"
-				effect = "NoSchedule"
-			}
+func TestAccEKS_ResourceNodeTemplate_edgeLocationConfigSwitch(t *testing.T) {
+	rName := fmt.Sprintf("%v-node-template-%v", ResourcePrefix, acctest.RandString(8))
+	resourceName := "castai_node_template.test"
+	clusterName, _ := lo.Coalesce(os.Getenv("CLUSTER_NAME"), "core-tf-acc-21-08-2025")
 
-			custom_taints {
-				key = "%[1]s-taint-key-2"
-				value = "%[1]s-taint-value-2"
-				effect = "NoExecute"
-			}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckNodeTemplateDestroy(rName),
+		Steps: []resource.TestStep{
+			{
+				// Deprecated field only: legacy edge_location_ids still work unchanged.
+				Config: testAccNodeTemplateEdgeLocationIDsConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_ids.#", "2"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_ids.0", "castai_edge_location.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_ids.1", "castai_edge_location.test_2", "id"),
+				),
+			},
+			{
+				// Switch from the deprecated field to the new block.
+				Config: testAccNodeTemplateEdgeLocationIDsSwitchedConfig(rName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_ids.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "edge_location_config.#", "1"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_location_id", "castai_edge_location.test_1", "id"),
+					resource.TestCheckResourceAttrPair(resourceName, "edge_location_config.0.edge_config_id", "castai_edge_configuration.test_1", "id"),
+				),
+			},
+		},
+		ExternalProviders: map[string]resource.ExternalProvider{
+			"aws": {
+				Source:            "hashicorp/aws",
+				VersionConstraint: "~> 4.0",
+			},
+		},
+	})
+}
 
-			custom_taints {
-				key = "%[1]s-taint-key-3"
-				value = "%[1]s-taint-value-3"
-			}
+func testAccEdgeConfigurationsConfig() string {
+	organizationID := testAccGetOrganizationID()
+	return fmt.Sprintf(`
+resource "castai_edge_configuration" "test_1" {
+  organization_id  = %[1]q
+  cluster_id       = castai_omni_cluster.test_omni.id
+  edge_location_id = castai_edge_location.test_1.id
+  name             = "test-edge-config-1"
 
-			custom_taints {
-				key = "%[1]s-taint-key-4"
-			}
+  aws = {
+    image_id = "al2023-ami-ecs-hvm-*"
+  }
 
-			edge_location_ids = [castai_edge_location.test_1.id, castai_edge_location.test_2.id]
+  cri = {
+    socket = "unix:///run/containerd/containerd.sock"
+  }
+}
 
-			price_adjustment_configuration {
-				instance_type_adjustments = {
-					"m5.xlarge"  = "1.0"
-					"m5.2xlarge" = "1.10"
-					"c5.xlarge"  = "0.95"
-				}
-			}
+resource "castai_edge_configuration" "test_2" {
+  organization_id  = %[1]q
+  cluster_id       = castai_omni_cluster.test_omni.id
+  edge_location_id = castai_edge_location.test_2.id
+  name             = "test-edge-config-2"
 
+  aws = {
+    image_id = "al2023-ami-ecs-hvm-*"
+  }
+
+  cri = {
+    socket = "unix:///run/containerd/containerd.sock"
+  }
+}
+`, organizationID)
+}
+
+// testAccNodeTemplateConstraints is the constraints block shared by the node template
+// acceptance test configs. Its values round-trip cleanly against the real API, and the
+// block must be present: without it the read populates API defaults into state and
+// every subsequent plan is non-empty.
+const testAccNodeTemplateConstraints = `
 			constraints {
 				fallback_restore_rate_seconds = 1800
 				spot = true
@@ -1056,8 +2789,124 @@ func testAccNodeTemplateConfig(rName, clusterName string) string {
 					}
 				}
 			}
+`
+
+// testAccNodeTemplateEdgeLocationConfigBase builds a node template acceptance config
+// carrying the given edge-location argument block and the shared constraints block.
+// withEdgeConfigurations controls whether edge configuration resources (slow to create
+// against the real API) are composed in as well.
+func testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, edgeArg string, withEdgeConfigurations bool) string {
+	configs := []string{
+		testAccEKSClusterConfig(rName, clusterName),
+		testAccNodeConfig(rName),
+		testAccEdgeLocationsConfig(rName, clusterName),
+	}
+	if withEdgeConfigurations {
+		configs = append(configs, testAccEdgeConfigurationsConfig())
+	}
+	return ConfigCompose(append(configs, fmt.Sprintf(`
+		resource "castai_node_template" "test" {
+			cluster_id        = castai_eks_cluster.test.id
+			name = %[1]q
+			configuration_id = castai_node_configuration.test.id
+			should_taint = true
+			clm_enabled = false
+
+%[2]s
+%[3]s
 		}
-	`, rName))
+	`, rName, edgeArg, testAccNodeTemplateConstraints))...)
+}
+
+func testAccNodeTemplateEdgeLocationConfigConfig(rName, clusterName string) string {
+	return testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, `
+			edge_location_config {
+				edge_location_id = castai_edge_location.test_1.id
+				edge_config_id   = castai_edge_configuration.test_1.id
+			}
+
+			edge_location_config {
+				edge_location_id = castai_edge_location.test_2.id
+			}
+	`, true)
+}
+
+func testAccNodeTemplateEdgeLocationConfigUpdatedConfig(rName, clusterName string) string {
+	return testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, `
+			edge_location_config {
+				edge_location_id = castai_edge_location.test_1.id
+				edge_config_id   = castai_edge_configuration.test_1.id
+			}
+
+			edge_location_config {
+				edge_location_id = castai_edge_location.test_2.id
+				edge_config_id   = castai_edge_configuration.test_2.id
+			}
+	`, true)
+}
+
+func testAccNodeTemplateEdgeLocationIDsConfig(rName, clusterName string) string {
+	return testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, `
+			edge_location_ids = [castai_edge_location.test_1.id, castai_edge_location.test_2.id]
+	`, false)
+}
+
+func testAccNodeTemplateEdgeLocationIDsSwitchedConfig(rName, clusterName string) string {
+	return testAccNodeTemplateEdgeLocationConfigBase(rName, clusterName, `
+			edge_location_config {
+				edge_location_id = castai_edge_location.test_1.id
+				edge_config_id   = castai_edge_configuration.test_1.id
+			}
+	`, true)
+}
+
+func testAccNodeTemplateConfig(rName, clusterName string) string {
+	return ConfigCompose(testAccEKSClusterConfig(rName, clusterName), testAccNodeConfig(rName), testAccEdgeLocationsConfig(rName, clusterName), fmt.Sprintf(`
+		resource "castai_node_template" "test" {
+			cluster_id        = castai_eks_cluster.test.id
+			name = %[1]q
+			configuration_id = castai_node_configuration.test.id
+			should_taint = true
+			clm_enabled = false
+
+			custom_labels = {
+				%[1]s-label-key-1 = "%[1]s-label-value-1"
+				%[1]s-label-key-2 = "%[1]s-label-value-2"
+			}
+
+			custom_taints {
+				key = "%[1]s-taint-key-1"
+				value = "%[1]s-taint-value-1"
+				effect = "NoSchedule"
+			}
+
+			custom_taints {
+				key = "%[1]s-taint-key-2"
+				value = "%[1]s-taint-value-2"
+				effect = "NoExecute"
+			}
+
+			custom_taints {
+				key = "%[1]s-taint-key-3"
+				value = "%[1]s-taint-value-3"
+			}
+
+			custom_taints {
+				key = "%[1]s-taint-key-4"
+			}
+
+			edge_location_ids = [castai_edge_location.test_1.id, castai_edge_location.test_2.id]
+
+			price_adjustment_configuration {
+				instance_type_adjustments = {
+					"m5.xlarge"  = "1.0"
+					"m5.2xlarge" = "1.10"
+					"c5.xlarge"  = "0.95"
+				}
+			}
+%[2]s
+		}
+	`, rName, testAccNodeTemplateConstraints))
 }
 
 func testAccEdgeLocationsConfig(rName, clusterName string) string {
@@ -1266,7 +3115,7 @@ func testAccNodeConfig(rName string) string {
 	return ConfigCompose(fmt.Sprintf(`
 data "aws_subnets" "cost" {
 	tags = {
-		Name = "*cost-terraform-cluster/SubnetPublic*"
+		Name = "e2e-clusters-private-*"
 	}
 }
 
@@ -1282,7 +3131,7 @@ resource "castai_node_configuration" "test" {
   eks {
 	instance_profile_arn = aws_iam_instance_profile.test.arn
     dns_cluster_ip       = "10.100.0.10"
-	security_groups      = [aws_security_group.test.id]
+	security_groups      = [data.aws_security_group.test.id]
   }
 }
 
@@ -1433,7 +3282,7 @@ func Test_toTemplateGpu(t *testing.T) {
 				DefaultSharedClientsPerGpu: lo.ToPtr(int32(4)),
 				EnableTimeSharing:          lo.ToPtr(false),
 				SharingConfiguration:       &map[string]sdk.NodetemplatesV1SharedGPU{},
-				SharingStrategy:            lo.ToPtr(sdk.GPUSHARINGSTRATEGYMPS),
+				SharingStrategy:            lo.ToPtr(sdk.NodetemplatesV1GPUSharingStrategyGPUSHARINGSTRATEGYMPS),
 			},
 		},
 		{
@@ -1446,7 +3295,7 @@ func Test_toTemplateGpu(t *testing.T) {
 				DefaultSharedClientsPerGpu: lo.ToPtr(int32(8)),
 				EnableTimeSharing:          lo.ToPtr(false),
 				SharingConfiguration:       &map[string]sdk.NodetemplatesV1SharedGPU{},
-				SharingStrategy:            lo.ToPtr(sdk.GPUSHARINGSTRATEGYTIMESLICING),
+				SharingStrategy:            lo.ToPtr(sdk.NodetemplatesV1GPUSharingStrategyGPUSHARINGSTRATEGYTIMESLICING),
 			},
 		},
 		{
@@ -1458,7 +3307,7 @@ func Test_toTemplateGpu(t *testing.T) {
 			want: &sdk.NodetemplatesV1GPU{
 				EnableTimeSharing:     lo.ToPtr(false),
 				SharingConfiguration:  &map[string]sdk.NodetemplatesV1SharedGPU{},
-				SharingStrategy:       lo.ToPtr(sdk.GPUSHARINGSTRATEGYMPS),
+				SharingStrategy:       lo.ToPtr(sdk.NodetemplatesV1GPUSharingStrategyGPUSHARINGSTRATEGYMPS),
 				UserManagedGpuDrivers: lo.ToPtr(true),
 			},
 		},
@@ -1603,7 +3452,7 @@ func Test_flattenGpuSettings(t *testing.T) {
 		{
 			name: "sharing_strategy mps",
 			input: &sdk.NodetemplatesV1GPU{
-				SharingStrategy:            lo.ToPtr(sdk.GPUSHARINGSTRATEGYMPS),
+				SharingStrategy:            lo.ToPtr(sdk.NodetemplatesV1GPUSharingStrategyGPUSHARINGSTRATEGYMPS),
 				DefaultSharedClientsPerGpu: lo.ToPtr(int32(4)),
 			},
 			want: []map[string]any{
@@ -1617,7 +3466,7 @@ func Test_flattenGpuSettings(t *testing.T) {
 		{
 			name: "sharing_strategy time-slicing",
 			input: &sdk.NodetemplatesV1GPU{
-				SharingStrategy:            lo.ToPtr(sdk.GPUSHARINGSTRATEGYTIMESLICING),
+				SharingStrategy:            lo.ToPtr(sdk.NodetemplatesV1GPUSharingStrategyGPUSHARINGSTRATEGYTIMESLICING),
 				DefaultSharedClientsPerGpu: lo.ToPtr(int32(8)),
 			},
 			want: []map[string]any{
@@ -1798,6 +3647,87 @@ func Test_toTemplateConstraintsAWSConstraints(t *testing.T) {
 	}
 }
 
+func Test_flattenGCPConstraints(t *testing.T) {
+	tests := []struct {
+		name  string
+		input *sdk.NodetemplatesV1TemplateConstraintsGCPConstraints
+		want  []map[string]any
+	}{
+		{
+			name:  "nil input returns nil",
+			input: nil,
+			want:  nil,
+		},
+		{
+			name:  "empty constraints",
+			input: &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{},
+			want:  []map[string]any{{}},
+		},
+		{
+			name: "single capacity reservation id",
+			input: &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{
+				CapacityReservationIds: &[]string{"1234567890"},
+			},
+			want: []map[string]any{{
+				FieldNodeTemplateGCPCapacityReservationIds: []any{"1234567890"},
+			}},
+		},
+		{
+			name: "multiple capacity reservation ids",
+			input: &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{
+				CapacityReservationIds: &[]string{"1234567890", "9876543210"},
+			},
+			want: []map[string]any{{
+				FieldNodeTemplateGCPCapacityReservationIds: []any{"1234567890", "9876543210"},
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := flattenGCPConstraints(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_toTemplateConstraintsGCPConstraints(t *testing.T) {
+	tests := map[string]struct {
+		input map[string]any
+		want  *sdk.NodetemplatesV1TemplateConstraintsGCPConstraints
+	}{
+		"nil input": {
+			input: nil,
+			want:  nil,
+		},
+		"empty constraints": {
+			input: map[string]any{},
+			want:  &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{},
+		},
+		"single capacity reservation id": {
+			input: map[string]any{
+				FieldNodeTemplateGCPCapacityReservationIds: []any{"1234567890"},
+			},
+			want: &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{
+				CapacityReservationIds: &[]string{"1234567890"},
+			},
+		},
+		"multiple capacity reservation ids": {
+			input: map[string]any{
+				FieldNodeTemplateGCPCapacityReservationIds: []any{"1234567890", "9876543210"},
+			},
+			want: &sdk.NodetemplatesV1TemplateConstraintsGCPConstraints{
+				CapacityReservationIds: &[]string{"1234567890", "9876543210"},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := toTemplateConstraintsGCPConstraints(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_toNodeTemplateConstraints_persistsSpotInterruptionPredictionsType(t *testing.T) {
 	tests := map[string]struct {
 		inputType string
@@ -1821,6 +3751,105 @@ func Test_toNodeTemplateConstraints_persistsSpotInterruptionPredictionsType(t *t
 			result := toTemplateConstraints(obj)
 			require.NotNil(t, result.SpotInterruptionPredictionsType)
 			require.Equal(t, tt.wantType, *result.SpotInterruptionPredictionsType)
+		})
+	}
+}
+
+func TestValidateNodeTemplateIsDefault(t *testing.T) {
+	tests := map[string]struct {
+		name      string
+		isDefault bool
+		expectErr bool
+		errSubstr string
+	}{
+		"custom template with is_default=false passes": {
+			name:      "custom-template",
+			isDefault: false,
+			expectErr: false,
+		},
+		"custom template with is_default=true fails": {
+			name:      "custom-template",
+			isDefault: true,
+			expectErr: true,
+			errSubstr: "is_default = true is invalid for node template",
+		},
+		"default-by-castai with is_default=true passes": {
+			name:      "default-by-castai",
+			isDefault: true,
+			expectErr: false,
+		},
+		"default-by-castai with is_default=false fails": {
+			name:      "default-by-castai",
+			isDefault: false,
+			expectErr: true,
+			errSubstr: "is_default = false is invalid for node template",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateNodeTemplateIsDefault(tt.name, tt.isDefault)
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errSubstr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFlattenInstanceFamilies(t *testing.T) {
+	tests := map[string]struct {
+		input  *sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints
+		expect []map[string][]string
+	}{
+		"nil input returns nil": {
+			input:  nil,
+			expect: nil,
+		},
+		"both nil returns nil": {
+			input:  &sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints{},
+			expect: nil,
+		},
+		"both empty slices returns nil": {
+			input: &sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints{
+				Include: lo.ToPtr([]string{}),
+				Exclude: lo.ToPtr([]string{}),
+			},
+			expect: nil,
+		},
+		"include only": {
+			input: &sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints{
+				Include: lo.ToPtr([]string{"n2", "n2d"}),
+			},
+			expect: []map[string][]string{
+				{FieldNodeTemplateInclude: {"n2", "n2d"}},
+			},
+		},
+		"exclude only": {
+			input: &sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints{
+				Exclude: lo.ToPtr([]string{"e2"}),
+			},
+			expect: []map[string][]string{
+				{FieldNodeTemplateExclude: {"e2"}},
+			},
+		},
+		"both populated": {
+			input: &sdk.NodetemplatesV1TemplateConstraintsInstanceFamilyConstraints{
+				Include: lo.ToPtr([]string{"n2"}),
+				Exclude: lo.ToPtr([]string{"e2"}),
+			},
+			expect: []map[string][]string{
+				{FieldNodeTemplateInclude: {"n2"}, FieldNodeTemplateExclude: {"e2"}},
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := flattenInstanceFamilies(tt.input)
+			require.Equal(t, tt.expect, result)
 		})
 	}
 }

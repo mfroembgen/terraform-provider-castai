@@ -5,8 +5,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/castai/terraform-provider-castai/castai/sdk"
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -22,7 +26,12 @@ func TestAccGKE_ResourceNodeConfiguration(t *testing.T) {
 	projectID := os.Getenv("GOOGLE_PROJECT_ID")
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if os.Getenv("CASTAI_GCP_CREDENTIALS") == "" {
+				t.Skipf("missing required env var: CASTAI_GCP_CREDENTIALS")
+			}
+		},
 		ProviderFactories: providerFactories,
 		CheckDestroy:      testAccCheckNodeConfigurationDestroy,
 		Steps: []resource.TestStep{
@@ -42,6 +51,9 @@ func TestAccGKE_ResourceNodeConfiguration(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "gke.0.network_tags.0", "ab"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.network_tags.1", "bc"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.zones.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.0.disk_image", fmt.Sprintf("projects/%s/global/images/ep-e2e-2dary-images-cache", projectID)),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.0.mode", "CONTAINER_IMAGE_CACHE"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.on_host_maintenance", "MIGRATE"),
 				),
 			},
@@ -61,6 +73,7 @@ func TestAccGKE_ResourceNodeConfiguration(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "gke.0.network_tags.0", "ab"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.network_tags.1", "bc"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.zones.#", "0"),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.#", "0"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.on_host_maintenance", "MIGRATE"),
 				),
 			},
@@ -98,6 +111,9 @@ func TestAccGKE_ResourceNodeConfiguration(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "gke.0.network_tags.1", "dd"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.zones.0", "us-central1-c"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.use_ephemeral_storage_local_ssd", "true"),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.0.disk_image", fmt.Sprintf("projects/%s/global/images/ep-e2e-2dary-images-cache", projectID)),
+					resource.TestCheckResourceAttr(resourceName, "gke.0.secondary_boot_disks.0.mode", "MODE_UNSPECIFIED"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.loadbalancers.0.target_backend_pools.0.name", "tg-1"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.loadbalancers.0.unmanaged_instance_groups.0.name", "ig-1"),
 					resource.TestCheckResourceAttr(resourceName, "gke.0.loadbalancers.0.unmanaged_instance_groups.0.zone", "us-central1-c"),
@@ -107,26 +123,20 @@ func TestAccGKE_ResourceNodeConfiguration(t *testing.T) {
 				),
 			},
 		},
-		ExternalProviders: map[string]resource.ExternalProvider{
-			"google": {
-				Source:            "hashicorp/google",
-				VersionConstraint: "> 4.75.0",
-			},
-			"google-beta": {
-				Source:            "hashicorp/google-beta",
-				VersionConstraint: "> 4.75.0",
-			},
-		},
 	})
 }
 
 func testAccGKENodeConfigurationConfig(rName, clusterName, projectID string) string {
-	const gkeParams = `
+	gkeParams := fmt.Sprintf(`
 		max_pods_per_node = 31
 		network_tags = ["ab", "bc"]
 		disk_type = "pd-balanced"
 		on_host_maintenance = "MIGRATE"
-	`
+		secondary_boot_disks {
+			disk_image = "projects/%[1]s/global/images/ep-e2e-2dary-images-cache"
+			mode = "CONTAINER_IMAGE_CACHE"
+		}
+	`, projectID)
 	return testAccGKENodeConfigurationConfigWithGKEConfig(rName, clusterName, projectID, gkeParams)
 }
 
@@ -190,6 +200,10 @@ resource "castai_node_configuration" "test" {
     disk_type = "pd-ssd"
     zones = ["us-central1-c"]
     use_ephemeral_storage_local_ssd = true
+	secondary_boot_disks {
+		disk_image = "projects/%[2]s/global/images/ep-e2e-2dary-images-cache"
+		mode = "MODE_UNSPECIFIED"
+	}
 	loadbalancers {
 		target_backend_pools {
 			name = "tg-1"
@@ -210,71 +224,130 @@ resource "castai_node_configuration" "test" {
   	}
   }
 }
-`, rName))
+`, rName, projectID))
 }
 func testAccGKEClusterConfig(rName string, clusterName string, projectID string) string {
+	castaiCreds := os.Getenv("CASTAI_GCP_CREDENTIALS")
 	return ConfigCompose(testAccGCPConfig(rName, clusterName, projectID), fmt.Sprintf(`
 resource "castai_gke_cluster" "test" {
-  project_id                 = %[1]q
-  location                   = "us-central1-c" 
-  name                       = %[2]q 
-  credentials_json           = base64decode(google_service_account_key.castai_key.private_key)
+  project_id       = %[1]q
+  location         = "us-central1-c"
+  name             = %[2]q
+  credentials_json = %[3]q
 }
 
-`, projectID, clusterName))
+`, projectID, clusterName, castaiCreds))
 }
 
-func testAccGCPConfig(rName, clusterName, projectID string) string {
+// CAST AI SA, custom role and bindings are pre-created by IaC
+// e2e-core/gke-tf-acc.tf.
+func testAccGCPConfig(_ string, clusterName, projectID string) string {
 
 	return fmt.Sprintf(`
 
 locals {
-  service_account_id    = %[3]q
   cluster_name = %[1]q
-  service_account_email = "${local.service_account_id}@$%[2]s.iam.gserviceaccount.com"
-  custom_role_id        = "castai.tfAcc.${substr(sha1(local.service_account_id),0,8)}.tf"
-  subnet_id = "projects/%[2]s/regions/us-central1/subnetworks/%[4]s"
+  subnet_id = "projects/%[2]s/regions/us-central1/subnetworks/%[3]s"
 }
 
-resource "google_service_account" "castai_service_account" {
-  account_id   = local.service_account_id
-  display_name = "Terraform acceptance tests for GKE cluster %[1]s"
-  project      = %[2]q
+`, clusterName, projectID, acceptanceTestClusterSubnetworkName)
 }
 
-data "castai_gke_user_policies" "gke" {}
+func TestGKEConfigSecondaryBootDisksMapping(t *testing.T) {
+	tests := []struct {
+		name     string
+		give     []interface{}
+		wantSend *[]sdk.NodeconfigV1SecondaryBootDisk
+		want     []map[string]interface{}
+	}{
+		{
+			name: "omitted mode is sent as MODE_UNSPECIFIED and reads back drift free",
+			give: []interface{}{
+				map[string]interface{}{"disk_image": "projects/p/global/images/img", "mode": ""},
+			},
+			wantSend: &[]sdk.NodeconfigV1SecondaryBootDisk{
+				{
+					DiskImage: toPtr("projects/p/global/images/img"),
+					Mode:      toPtr(sdk.NodeconfigV1SecondaryBootDiskModeMODEUNSPECIFIED),
+				},
+			},
+			want: []map[string]interface{}{
+				{"disk_image": "projects/p/global/images/img", "mode": "MODE_UNSPECIFIED"},
+			},
+		},
+		{
+			name: "explicit MODE_UNSPECIFIED stays drift free",
+			give: []interface{}{
+				map[string]interface{}{"disk_image": "global/images/img", "mode": "MODE_UNSPECIFIED"},
+			},
+			wantSend: &[]sdk.NodeconfigV1SecondaryBootDisk{
+				{
+					DiskImage: toPtr("global/images/img"),
+					Mode:      toPtr(sdk.NodeconfigV1SecondaryBootDiskModeMODEUNSPECIFIED),
+				},
+			},
+			want: []map[string]interface{}{
+				{"disk_image": "global/images/img", "mode": "MODE_UNSPECIFIED"},
+			},
+		},
+		{
+			name: "CONTAINER_IMAGE_CACHE round trips",
+			give: []interface{}{
+				map[string]interface{}{"disk_image": "global/images/img", "mode": "CONTAINER_IMAGE_CACHE"},
+			},
+			wantSend: &[]sdk.NodeconfigV1SecondaryBootDisk{
+				{
+					DiskImage: toPtr("global/images/img"),
+					Mode:      toPtr(sdk.NodeconfigV1SecondaryBootDiskModeCONTAINERIMAGECACHE),
+				},
+			},
+			want: []map[string]interface{}{
+				{"disk_image": "global/images/img", "mode": "CONTAINER_IMAGE_CACHE"},
+			},
+		},
+	}
 
-resource "google_project_iam_custom_role" "castai_role" {
-  role_id     = local.custom_role_id
-  title       = "Terraform acceptance tests for GKE cluster %[1]s"
-  description = "Role to manage GKE cluster via CAST AI"
-  permissions = toset(data.castai_gke_user_policies.gke.policy)
-  project     = %[2]q
-  stage       = "GA"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := toGKEConfig(map[string]interface{}{"secondary_boot_disks": tt.give})
+			require.Equal(t, tt.wantSend, cfg.SecondaryBootDisks)
+
+			flat := flattenGKEConfig(&sdk.NodeconfigV1GKEConfig{SecondaryBootDisks: cfg.SecondaryBootDisks})
+			require.Equal(t, tt.want, flat[0]["secondary_boot_disks"])
+		})
+	}
 }
 
-resource "google_project_iam_member" "project_developer" {
-  project = %[2]q
-  role    = "roles/container.developer"
-  member = google_service_account.castai_service_account.member
+func TestGKEConfigSecondaryBootDisksEmpty(t *testing.T) {
+	cfg := toGKEConfig(map[string]interface{}{"secondary_boot_disks": []interface{}{}})
+	require.Nil(t, cfg.SecondaryBootDisks)
+
+	flat := flattenGKEConfig(&sdk.NodeconfigV1GKEConfig{SecondaryBootDisks: &[]sdk.NodeconfigV1SecondaryBootDisk{}})
+	require.NotContains(t, flat[0], "secondary_boot_disks")
 }
 
-resource "google_project_iam_member" "project_sa" {
-  project = %[2]q
-  role    = "roles/iam.serviceAccountUser"
-  member = google_service_account.castai_service_account.member
-}
+func TestGKEConfigSecondaryBootDisksDiskImageValidation(t *testing.T) {
+	diskImageSchema := resourceNodeConfiguration().Schema[FieldNodeConfigurationGKE].
+		Elem.(*schema.Resource).Schema["secondary_boot_disks"].
+		Elem.(*schema.Resource).Schema["disk_image"]
 
-resource "google_project_iam_member" "project_castai" {
-  project = %[2]q
-  role    = "projects/%[2]s/roles/${local.custom_role_id}"
-  member = google_service_account.castai_service_account.member
-}
+	tests := []struct {
+		name      string
+		give      string
+		wantError bool
+	}{
+		{name: "same project shorthand", give: "global/images/img", wantError: false},
+		{name: "fully qualified", give: "projects/my-project/global/images/img", wantError: false},
+		{name: "image family form rejected", give: "global/images/family/img", wantError: true},
+		{name: "missing global scope rejected", give: "projects/my-project/images/img", wantError: true},
+		{name: "bare image name rejected", give: "img", wantError: true},
+		{name: "empty rejected", give: "", wantError: true},
+	}
 
-resource "google_service_account_key" "castai_key" {
-  service_account_id = google_service_account.castai_service_account.name
-  public_key_type    = "TYPE_X509_PEM_FILE"
-}
-
-`, clusterName, projectID, rName, acceptanceTestClusterSubnetworkName)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diags := diskImageSchema.ValidateDiagFunc(tt.give, cty.Path{})
+			require.Equal(t, tt.wantError, diags.HasError())
+		})
+	}
 }

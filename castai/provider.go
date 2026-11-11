@@ -12,18 +12,24 @@ import (
 	"github.com/castai/terraform-provider-castai/castai/sdk"
 	"github.com/castai/terraform-provider-castai/castai/sdk/ai_optimizer"
 	"github.com/castai/terraform-provider-castai/castai/sdk/cluster_autoscaler"
+	"github.com/castai/terraform-provider-castai/castai/sdk/cluster_autoscaler_v2"
 	"github.com/castai/terraform-provider-castai/castai/sdk/omni"
 	"github.com/castai/terraform-provider-castai/castai/sdk/organization_management"
 	"github.com/castai/terraform-provider-castai/castai/sdk/patching_engine"
+	"github.com/castai/terraform-provider-castai/castai/sdk/pricing"
+	"github.com/castai/terraform-provider-castai/castai/sdk/workload_eviction"
 )
 
 type ProviderConfig struct {
 	api                          sdk.ClientWithResponsesInterface
 	clusterAutoscalerClient      cluster_autoscaler.ClientWithResponsesInterface
+	clusterAutoscalerV2Client    cluster_autoscaler_v2.ClientWithResponsesInterface
+	workloadEvictionClient       workload_eviction.ClientWithResponsesInterface
 	organizationManagementClient organization_management.ClientWithResponsesInterface
-	omniAPI                      *omni.ClientWithResponses
+	omniAPI                      omni.ClientWithResponsesInterface
 	aiOptimizerClient            ai_optimizer.ClientWithResponsesInterface
 	patchingEngineClient         patching_engine.ClientWithResponsesInterface
+	pricingClient                pricing.ClientWithResponsesInterface
 	organizationID               string
 }
 
@@ -60,6 +66,7 @@ func Provider(version string) *schema.Provider {
 			"castai_gke_cluster_id":             resourceGKEClusterId(),
 			"castai_aks_cluster":                resourceAKSCluster(),
 			"castai_autoscaler":                 resourceAutoscaler(),
+			"castai_evictor":                    resourceEvictor(),
 			"castai_evictor_advanced_config":    resourceEvictionConfig(),
 			"castai_node_template":              resourceNodeTemplate(),
 			"castai_rebalancing_schedule":       resourceRebalancingSchedule(),
@@ -101,10 +108,13 @@ func Provider(version string) *schema.Provider {
 			"castai_organization":                  dataSourceOrganization(),
 			"castai_rebalancing_schedule":          dataSourceRebalancingSchedule(),
 			"castai_hibernation_schedule":          dataSourceHibernationSchedule(),
+			"castai_workload_scaling_policy":       dataSourceWorkloadScalingPolicy(),
 			"castai_workload_scaling_policies":     dataSourceWorkloadScalingPolicies(),
 			"castai_workload_scaling_policy_order": dataSourceWorkloadScalingPolicyOrder(),
 			"castai_cache_group":                   dataSourceCacheGroup(),
 			"castai_impersonation_service_account": dataSourceImpersonationServiceAccount(),
+			"castai_roles":                         dataSourceRoles(),
+			"castai_role":                          dataSourceRole(),
 		},
 
 		ConfigureContextFunc: providerConfigure(version),
@@ -138,6 +148,16 @@ func providerConfigure(version string) schema.ConfigureContextFunc {
 			return nil, diag.FromErr(err)
 		}
 
+		clusterAutoscalerV2Client, err := cluster_autoscaler_v2.CreateClient(apiURL, apiToken, agent)
+		if err != nil {
+			return nil, diag.FromErr(err)
+		}
+
+		workloadEvictionClient, err := workload_eviction.CreateClient(apiURL, apiToken, agent)
+		if err != nil {
+			return nil, diag.FromErr(err)
+		}
+
 		organizationManagementClient, err := organization_management.CreateClient(apiURL, apiToken, agent)
 		if err != nil {
 			return nil, diag.FromErr(err)
@@ -158,13 +178,21 @@ func providerConfigure(version string) schema.ConfigureContextFunc {
 			return nil, diag.FromErr(err)
 		}
 
+		pricingClient, err := pricing.CreateClient(apiURL, apiToken, agent)
+		if err != nil {
+			return nil, diag.FromErr(err)
+		}
+
 		return &ProviderConfig{
 			api:                          client,
 			clusterAutoscalerClient:      clusterAutoscalerClient,
+			clusterAutoscalerV2Client:    clusterAutoscalerV2Client,
+			workloadEvictionClient:       workloadEvictionClient,
 			organizationManagementClient: organizationManagementClient,
 			omniAPI:                      omniClient,
 			aiOptimizerClient:            aiOptimizerClient,
 			patchingEngineClient:         patchingEngineClient,
+			pricingClient:                pricingClient,
 			organizationID:               organizationID,
 		}, nil
 	}

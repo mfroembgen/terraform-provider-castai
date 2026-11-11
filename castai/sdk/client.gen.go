@@ -231,12 +231,12 @@ type ClientInterface interface {
 	DboAPIGetCacheConfiguration(ctx context.Context, groupId string, databaseName string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DboAPIDeleteCacheConfiguration request
-	DboAPIDeleteCacheConfiguration(ctx context.Context, groupId string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DboAPIDeleteCacheConfiguration(ctx context.Context, groupId string, id string, params *DboAPIDeleteCacheConfigurationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DboAPIUpdateCacheConfigurationWithBody request with any body
-	DboAPIUpdateCacheConfigurationWithBody(ctx context.Context, groupId string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DboAPIUpdateCacheConfigurationWithBody(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	DboAPIUpdateCacheConfiguration(ctx context.Context, groupId string, id string, body DboAPIUpdateCacheConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DboAPIUpdateCacheConfiguration(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, body DboAPIUpdateCacheConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DboAPICreateCacheTTLWithBody request with any body
 	DboAPICreateCacheTTLWithBody(ctx context.Context, groupId string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -583,6 +583,14 @@ type ClientInterface interface {
 	// InventoryAPISyncClusterResources request
 	InventoryAPISyncClusterResources(ctx context.Context, organizationId string, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RbacServiceAPIListGroups request
+	RbacServiceAPIListGroups(ctx context.Context, organizationId string, params *RbacServiceAPIListGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RbacServiceAPIUpdateGroupsWithBody request with any body
+	RbacServiceAPIUpdateGroupsWithBody(ctx context.Context, organizationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RbacServiceAPIUpdateGroups(ctx context.Context, organizationId string, body RbacServiceAPIUpdateGroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RbacServiceAPICreateGroupWithBody request with any body
 	RbacServiceAPICreateGroupWithBody(ctx context.Context, organizationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -598,6 +606,9 @@ type ClientInterface interface {
 
 	// RbacServiceAPIGetGroup request
 	RbacServiceAPIGetGroup(ctx context.Context, organizationId string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UsersAPILeaveOrganization request
+	UsersAPILeaveOrganization(ctx context.Context, organizationId string, params *UsersAPILeaveOrganizationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// InventoryAPIGetReservations request
 	InventoryAPIGetReservations(ctx context.Context, organizationId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -651,6 +662,9 @@ type ClientInterface interface {
 
 	ServiceAccountsAPICreateServiceAccount(ctx context.Context, organizationId string, body ServiceAccountsAPICreateServiceAccountJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ServiceAccountsAPIListOrganizationServiceAccountKeys request
+	ServiceAccountsAPIListOrganizationServiceAccountKeys(ctx context.Context, organizationId string, params *ServiceAccountsAPIListOrganizationServiceAccountKeysParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ServiceAccountsAPIDeleteServiceAccount request
 	ServiceAccountsAPIDeleteServiceAccount(ctx context.Context, organizationId string, serviceAccountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -693,7 +707,7 @@ type ClientInterface interface {
 	UsersAPIAddUserToOrganization(ctx context.Context, organizationId string, body UsersAPIAddUserToOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UsersAPIRemoveUserFromOrganization request
-	UsersAPIRemoveUserFromOrganization(ctx context.Context, organizationId string, userId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UsersAPIRemoveUserFromOrganization(ctx context.Context, organizationId string, userId string, params *UsersAPIRemoveUserFromOrganizationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UsersAPIListUserGroups request
 	UsersAPIListUserGroups(ctx context.Context, organizationId string, userId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -813,6 +827,9 @@ type ClientInterface interface {
 
 	// RuntimeSecurityAPIGetRuntimeEventsProcessTree request
 	RuntimeSecurityAPIGetRuntimeEventsProcessTree(ctx context.Context, clusterId string, params *RuntimeSecurityAPIGetRuntimeEventsProcessTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RuntimeSecurityAPIGetClusterKvisorVersion request
+	RuntimeSecurityAPIGetClusterKvisorVersion(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RuntimeSecurityAPIGetLists request
 	RuntimeSecurityAPIGetLists(ctx context.Context, params *RuntimeSecurityAPIGetListsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -960,6 +977,11 @@ type ClientInterface interface {
 	// WorkloadOptimizationAPIGetWorkloadScalingPolicy request
 	WorkloadOptimizationAPIGetWorkloadScalingPolicy(ctx context.Context, clusterId string, policyId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBody request with any body
+	WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBody(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	WorkloadOptimizationAPIPatchWorkloadScalingPolicy(ctx context.Context, clusterId string, policyId string, body WorkloadOptimizationAPIPatchWorkloadScalingPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBody request with any body
 	WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBody(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1028,6 +1050,11 @@ type ClientInterface interface {
 
 	// InventoryAPIListZones request
 	InventoryAPIListZones(ctx context.Context, params *InventoryAPIListZonesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WorkloadOptimizationAPIQueryWorkloadMetricsWithBody request with any body
+	WorkloadOptimizationAPIQueryWorkloadMetricsWithBody(ctx context.Context, clusterId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	WorkloadOptimizationAPIQueryWorkloadMetrics(ctx context.Context, clusterId string, body WorkloadOptimizationAPIQueryWorkloadMetricsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// WorkloadOptimizationAPIListClusterHPAs request
 	WorkloadOptimizationAPIListClusterHPAs(ctx context.Context, clusterId string, params *WorkloadOptimizationAPIListClusterHPAsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1649,8 +1676,8 @@ func (c *Client) DboAPIGetCacheConfiguration(ctx context.Context, groupId string
 	return c.Client.Do(req)
 }
 
-func (c *Client) DboAPIDeleteCacheConfiguration(ctx context.Context, groupId string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDboAPIDeleteCacheConfigurationRequest(c.Server, groupId, id)
+func (c *Client) DboAPIDeleteCacheConfiguration(ctx context.Context, groupId string, id string, params *DboAPIDeleteCacheConfigurationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDboAPIDeleteCacheConfigurationRequest(c.Server, groupId, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1661,8 +1688,8 @@ func (c *Client) DboAPIDeleteCacheConfiguration(ctx context.Context, groupId str
 	return c.Client.Do(req)
 }
 
-func (c *Client) DboAPIUpdateCacheConfigurationWithBody(ctx context.Context, groupId string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDboAPIUpdateCacheConfigurationRequestWithBody(c.Server, groupId, id, contentType, body)
+func (c *Client) DboAPIUpdateCacheConfigurationWithBody(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDboAPIUpdateCacheConfigurationRequestWithBody(c.Server, groupId, id, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1673,8 +1700,8 @@ func (c *Client) DboAPIUpdateCacheConfigurationWithBody(ctx context.Context, gro
 	return c.Client.Do(req)
 }
 
-func (c *Client) DboAPIUpdateCacheConfiguration(ctx context.Context, groupId string, id string, body DboAPIUpdateCacheConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDboAPIUpdateCacheConfigurationRequest(c.Server, groupId, id, body)
+func (c *Client) DboAPIUpdateCacheConfiguration(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, body DboAPIUpdateCacheConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDboAPIUpdateCacheConfigurationRequest(c.Server, groupId, id, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3197,6 +3224,42 @@ func (c *Client) InventoryAPISyncClusterResources(ctx context.Context, organizat
 	return c.Client.Do(req)
 }
 
+func (c *Client) RbacServiceAPIListGroups(ctx context.Context, organizationId string, params *RbacServiceAPIListGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRbacServiceAPIListGroupsRequest(c.Server, organizationId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RbacServiceAPIUpdateGroupsWithBody(ctx context.Context, organizationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRbacServiceAPIUpdateGroupsRequestWithBody(c.Server, organizationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RbacServiceAPIUpdateGroups(ctx context.Context, organizationId string, body RbacServiceAPIUpdateGroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRbacServiceAPIUpdateGroupsRequest(c.Server, organizationId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) RbacServiceAPICreateGroupWithBody(ctx context.Context, organizationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRbacServiceAPICreateGroupRequestWithBody(c.Server, organizationId, contentType, body)
 	if err != nil {
@@ -3259,6 +3322,18 @@ func (c *Client) RbacServiceAPIDeleteGroup(ctx context.Context, organizationId s
 
 func (c *Client) RbacServiceAPIGetGroup(ctx context.Context, organizationId string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRbacServiceAPIGetGroupRequest(c.Server, organizationId, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UsersAPILeaveOrganization(ctx context.Context, organizationId string, params *UsersAPILeaveOrganizationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUsersAPILeaveOrganizationRequest(c.Server, organizationId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3497,6 +3572,18 @@ func (c *Client) ServiceAccountsAPICreateServiceAccount(ctx context.Context, org
 	return c.Client.Do(req)
 }
 
+func (c *Client) ServiceAccountsAPIListOrganizationServiceAccountKeys(ctx context.Context, organizationId string, params *ServiceAccountsAPIListOrganizationServiceAccountKeysParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewServiceAccountsAPIListOrganizationServiceAccountKeysRequest(c.Server, organizationId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ServiceAccountsAPIDeleteServiceAccount(ctx context.Context, organizationId string, serviceAccountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewServiceAccountsAPIDeleteServiceAccountRequest(c.Server, organizationId, serviceAccountId)
 	if err != nil {
@@ -3677,8 +3764,8 @@ func (c *Client) UsersAPIAddUserToOrganization(ctx context.Context, organization
 	return c.Client.Do(req)
 }
 
-func (c *Client) UsersAPIRemoveUserFromOrganization(ctx context.Context, organizationId string, userId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUsersAPIRemoveUserFromOrganizationRequest(c.Server, organizationId, userId)
+func (c *Client) UsersAPIRemoveUserFromOrganization(ctx context.Context, organizationId string, userId string, params *UsersAPIRemoveUserFromOrganizationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUsersAPIRemoveUserFromOrganizationRequest(c.Server, organizationId, userId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4195,6 +4282,18 @@ func (c *Client) RuntimeSecurityAPIGetRuntimeEventGroups(ctx context.Context, pa
 
 func (c *Client) RuntimeSecurityAPIGetRuntimeEventsProcessTree(ctx context.Context, clusterId string, params *RuntimeSecurityAPIGetRuntimeEventsProcessTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRuntimeSecurityAPIGetRuntimeEventsProcessTreeRequest(c.Server, clusterId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RuntimeSecurityAPIGetClusterKvisorVersion(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRuntimeSecurityAPIGetClusterKvisorVersionRequest(c.Server, clusterId)
 	if err != nil {
 		return nil, err
 	}
@@ -4853,6 +4952,30 @@ func (c *Client) WorkloadOptimizationAPIGetWorkloadScalingPolicy(ctx context.Con
 	return c.Client.Do(req)
 }
 
+func (c *Client) WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBody(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequestWithBody(c.Server, clusterId, policyId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WorkloadOptimizationAPIPatchWorkloadScalingPolicy(ctx context.Context, clusterId string, policyId string, body WorkloadOptimizationAPIPatchWorkloadScalingPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequest(c.Server, clusterId, policyId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBody(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWorkloadOptimizationAPIUpdateWorkloadScalingPolicyRequestWithBody(c.Server, clusterId, policyId, contentType, body)
 	if err != nil {
@@ -5131,6 +5254,30 @@ func (c *Client) WorkloadOptimizationAPIGetOrganizationAgentStatuses(ctx context
 
 func (c *Client) InventoryAPIListZones(ctx context.Context, params *InventoryAPIListZonesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewInventoryAPIListZonesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WorkloadOptimizationAPIQueryWorkloadMetricsWithBody(ctx context.Context, clusterId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWorkloadOptimizationAPIQueryWorkloadMetricsRequestWithBody(c.Server, clusterId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WorkloadOptimizationAPIQueryWorkloadMetrics(ctx context.Context, clusterId string, body WorkloadOptimizationAPIQueryWorkloadMetricsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWorkloadOptimizationAPIQueryWorkloadMetricsRequest(c.Server, clusterId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -8176,7 +8323,7 @@ func NewDboAPIGetCacheConfigurationRequest(server string, groupId string, databa
 }
 
 // NewDboAPIDeleteCacheConfigurationRequest generates requests for DboAPIDeleteCacheConfiguration
-func NewDboAPIDeleteCacheConfigurationRequest(server string, groupId string, id string) (*http.Request, error) {
+func NewDboAPIDeleteCacheConfigurationRequest(server string, groupId string, id string, params *DboAPIDeleteCacheConfigurationParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8206,6 +8353,28 @@ func NewDboAPIDeleteCacheConfigurationRequest(server string, groupId string, id 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Roxy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "roxy", runtime.ParamLocationQuery, *params.Roxy); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
@@ -8217,18 +8386,18 @@ func NewDboAPIDeleteCacheConfigurationRequest(server string, groupId string, id 
 }
 
 // NewDboAPIUpdateCacheConfigurationRequest calls the generic DboAPIUpdateCacheConfiguration builder with application/json body
-func NewDboAPIUpdateCacheConfigurationRequest(server string, groupId string, id string, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*http.Request, error) {
+func NewDboAPIUpdateCacheConfigurationRequest(server string, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewDboAPIUpdateCacheConfigurationRequestWithBody(server, groupId, id, "application/json", bodyReader)
+	return NewDboAPIUpdateCacheConfigurationRequestWithBody(server, groupId, id, params, "application/json", bodyReader)
 }
 
 // NewDboAPIUpdateCacheConfigurationRequestWithBody generates requests for DboAPIUpdateCacheConfiguration with any type of body
-func NewDboAPIUpdateCacheConfigurationRequestWithBody(server string, groupId string, id string, contentType string, body io.Reader) (*http.Request, error) {
+func NewDboAPIUpdateCacheConfigurationRequestWithBody(server string, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8258,6 +8427,28 @@ func NewDboAPIUpdateCacheConfigurationRequestWithBody(server string, groupId str
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Roxy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "roxy", runtime.ParamLocationQuery, *params.Roxy); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("PUT", queryURL.String(), body)
@@ -11368,6 +11559,22 @@ func NewExternalClusterAPIGetConnectAndEnableCASTAICmdRequest(server string, par
 
 		}
 
+		if params.ClusterId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "clusterId", runtime.ParamLocationQuery, *params.ClusterId); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -13574,6 +13781,157 @@ func NewInventoryAPISyncClusterResourcesRequest(server string, organizationId st
 	return req, nil
 }
 
+// NewRbacServiceAPIListGroupsRequest generates requests for RbacServiceAPIListGroups
+func NewRbacServiceAPIListGroupsRequest(server string, organizationId string, params *RbacServiceAPIListGroupsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/organizations/%s/groups", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PageLimit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "page.limit", runtime.ParamLocationQuery, *params.PageLimit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PageCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "page.cursor", runtime.ParamLocationQuery, *params.PageCursor); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.MemberId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "memberId", runtime.ParamLocationQuery, *params.MemberId); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ManagedBy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "managedBy", runtime.ParamLocationQuery, *params.ManagedBy); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRbacServiceAPIUpdateGroupsRequest calls the generic RbacServiceAPIUpdateGroups builder with application/json body
+func NewRbacServiceAPIUpdateGroupsRequest(server string, organizationId string, body RbacServiceAPIUpdateGroupsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRbacServiceAPIUpdateGroupsRequestWithBody(server, organizationId, "application/json", bodyReader)
+}
+
+// NewRbacServiceAPIUpdateGroupsRequestWithBody generates requests for RbacServiceAPIUpdateGroups with any type of body
+func NewRbacServiceAPIUpdateGroupsRequestWithBody(server string, organizationId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/organizations/%s/groups", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRbacServiceAPICreateGroupRequest calls the generic RbacServiceAPICreateGroup builder with application/json body
 func NewRbacServiceAPICreateGroupRequest(server string, organizationId string, body RbacServiceAPICreateGroupJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -13750,6 +14108,62 @@ func NewRbacServiceAPIGetGroupRequest(server string, organizationId string, id s
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUsersAPILeaveOrganizationRequest generates requests for UsersAPILeaveOrganization
+func NewUsersAPILeaveOrganizationRequest(server string, organizationId string, params *UsersAPILeaveOrganizationParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/organizations/%s/me", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Product != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "product", runtime.ParamLocationQuery, *params.Product); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -14512,6 +14926,22 @@ func NewServiceAccountsAPIListServiceAccountsRequest(server string, organization
 
 		}
 
+		if params.ServiceAccountName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "serviceAccountName", runtime.ParamLocationQuery, *params.ServiceAccountName); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -14566,6 +14996,78 @@ func NewServiceAccountsAPICreateServiceAccountRequestWithBody(server string, org
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewServiceAccountsAPIListOrganizationServiceAccountKeysRequest generates requests for ServiceAccountsAPIListOrganizationServiceAccountKeys
+func NewServiceAccountsAPIListOrganizationServiceAccountKeysRequest(server string, organizationId string, params *ServiceAccountsAPIListOrganizationServiceAccountKeysParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/organizations/%s/service-accounts/keys", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PageLimit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "page.limit", runtime.ParamLocationQuery, *params.PageLimit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PageCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "page.cursor", runtime.ParamLocationQuery, *params.PageCursor); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -15037,6 +15539,22 @@ func NewUsersAPIRemoveOrganizationUsersRequest(server string, organizationId str
 			}
 		}
 
+		if params.Product != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "product", runtime.ParamLocationQuery, *params.Product); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -15109,6 +15627,22 @@ func NewUsersAPIListOrganizationUsersRequest(server string, organizationId strin
 
 		}
 
+		if params.Product != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "product", runtime.ParamLocationQuery, *params.Product); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -15168,7 +15702,7 @@ func NewUsersAPIAddUserToOrganizationRequestWithBody(server string, organization
 }
 
 // NewUsersAPIRemoveUserFromOrganizationRequest generates requests for UsersAPIRemoveUserFromOrganization
-func NewUsersAPIRemoveUserFromOrganizationRequest(server string, organizationId string, userId string) (*http.Request, error) {
+func NewUsersAPIRemoveUserFromOrganizationRequest(server string, organizationId string, userId string, params *UsersAPIRemoveUserFromOrganizationParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -15198,6 +15732,28 @@ func NewUsersAPIRemoveUserFromOrganizationRequest(server string, organizationId 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Product != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "product", runtime.ParamLocationQuery, *params.Product); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
@@ -17351,6 +17907,40 @@ func NewRuntimeSecurityAPIGetRuntimeEventsProcessTreeRequest(server string, clus
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRuntimeSecurityAPIGetClusterKvisorVersionRequest generates requests for RuntimeSecurityAPIGetClusterKvisorVersion
+func NewRuntimeSecurityAPIGetClusterKvisorVersionRequest(server string, clusterId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterId", runtime.ParamLocationPath, clusterId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/security/runtime/kvisor-version/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -19573,6 +20163,60 @@ func NewWorkloadOptimizationAPIGetWorkloadScalingPolicyRequest(server string, cl
 	return req, nil
 }
 
+// NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequest calls the generic WorkloadOptimizationAPIPatchWorkloadScalingPolicy builder with application/json body
+func NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequest(server string, clusterId string, policyId string, body WorkloadOptimizationAPIPatchWorkloadScalingPolicyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequestWithBody(server, clusterId, policyId, "application/json", bodyReader)
+}
+
+// NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequestWithBody generates requests for WorkloadOptimizationAPIPatchWorkloadScalingPolicy with any type of body
+func NewWorkloadOptimizationAPIPatchWorkloadScalingPolicyRequestWithBody(server string, clusterId string, policyId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterId", runtime.ParamLocationPath, clusterId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "policyId", runtime.ParamLocationPath, policyId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workload-autoscaling/clusters/%s/policies/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewWorkloadOptimizationAPIUpdateWorkloadScalingPolicyRequest calls the generic WorkloadOptimizationAPIUpdateWorkloadScalingPolicy builder with application/json body
 func NewWorkloadOptimizationAPIUpdateWorkloadScalingPolicyRequest(server string, clusterId string, policyId string, body WorkloadOptimizationAPIUpdateWorkloadScalingPolicyJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -20808,6 +21452,22 @@ func NewWorkloadOptimizationAPIGetWorkloadRequest(server string, clusterId strin
 
 		}
 
+		if params.ScopeValue != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "scopeValue", runtime.ParamLocationQuery, *params.ScopeValue); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -21170,6 +21830,53 @@ func NewInventoryAPIListZonesRequest(server string, params *InventoryAPIListZone
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewWorkloadOptimizationAPIQueryWorkloadMetricsRequest calls the generic WorkloadOptimizationAPIQueryWorkloadMetrics builder with application/json body
+func NewWorkloadOptimizationAPIQueryWorkloadMetricsRequest(server string, clusterId string, body WorkloadOptimizationAPIQueryWorkloadMetricsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewWorkloadOptimizationAPIQueryWorkloadMetricsRequestWithBody(server, clusterId, "application/json", bodyReader)
+}
+
+// NewWorkloadOptimizationAPIQueryWorkloadMetricsRequestWithBody generates requests for WorkloadOptimizationAPIQueryWorkloadMetrics with any type of body
+func NewWorkloadOptimizationAPIQueryWorkloadMetricsRequestWithBody(server string, clusterId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterId", runtime.ParamLocationPath, clusterId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1alpha/workload-autoscaling/clusters/%s/workloads/metrics:query", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -21873,12 +22580,12 @@ type ClientWithResponsesInterface interface {
 	DboAPIGetCacheConfigurationWithResponse(ctx context.Context, groupId string, databaseName string) (*DboAPIGetCacheConfigurationResponse, error)
 
 	// DboAPIDeleteCacheConfiguration request
-	DboAPIDeleteCacheConfigurationWithResponse(ctx context.Context, groupId string, id string) (*DboAPIDeleteCacheConfigurationResponse, error)
+	DboAPIDeleteCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, params *DboAPIDeleteCacheConfigurationParams) (*DboAPIDeleteCacheConfigurationResponse, error)
 
 	// DboAPIUpdateCacheConfiguration request  with any body
-	DboAPIUpdateCacheConfigurationWithBodyWithResponse(ctx context.Context, groupId string, id string, contentType string, body io.Reader) (*DboAPIUpdateCacheConfigurationResponse, error)
+	DboAPIUpdateCacheConfigurationWithBodyWithResponse(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, contentType string, body io.Reader) (*DboAPIUpdateCacheConfigurationResponse, error)
 
-	DboAPIUpdateCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*DboAPIUpdateCacheConfigurationResponse, error)
+	DboAPIUpdateCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*DboAPIUpdateCacheConfigurationResponse, error)
 
 	// DboAPICreateCacheTTL request  with any body
 	DboAPICreateCacheTTLWithBodyWithResponse(ctx context.Context, groupId string, id string, contentType string, body io.Reader) (*DboAPICreateCacheTTLResponse, error)
@@ -22225,6 +22932,14 @@ type ClientWithResponsesInterface interface {
 	// InventoryAPISyncClusterResources request
 	InventoryAPISyncClusterResourcesWithResponse(ctx context.Context, organizationId string, clusterId string) (*InventoryAPISyncClusterResourcesResponse, error)
 
+	// RbacServiceAPIListGroups request
+	RbacServiceAPIListGroupsWithResponse(ctx context.Context, organizationId string, params *RbacServiceAPIListGroupsParams) (*RbacServiceAPIListGroupsResponse, error)
+
+	// RbacServiceAPIUpdateGroups request  with any body
+	RbacServiceAPIUpdateGroupsWithBodyWithResponse(ctx context.Context, organizationId string, contentType string, body io.Reader) (*RbacServiceAPIUpdateGroupsResponse, error)
+
+	RbacServiceAPIUpdateGroupsWithResponse(ctx context.Context, organizationId string, body RbacServiceAPIUpdateGroupsJSONRequestBody) (*RbacServiceAPIUpdateGroupsResponse, error)
+
 	// RbacServiceAPICreateGroup request  with any body
 	RbacServiceAPICreateGroupWithBodyWithResponse(ctx context.Context, organizationId string, contentType string, body io.Reader) (*RbacServiceAPICreateGroupResponse, error)
 
@@ -22240,6 +22955,9 @@ type ClientWithResponsesInterface interface {
 
 	// RbacServiceAPIGetGroup request
 	RbacServiceAPIGetGroupWithResponse(ctx context.Context, organizationId string, id string) (*RbacServiceAPIGetGroupResponse, error)
+
+	// UsersAPILeaveOrganization request
+	UsersAPILeaveOrganizationWithResponse(ctx context.Context, organizationId string, params *UsersAPILeaveOrganizationParams) (*UsersAPILeaveOrganizationResponse, error)
 
 	// InventoryAPIGetReservations request
 	InventoryAPIGetReservationsWithResponse(ctx context.Context, organizationId string) (*InventoryAPIGetReservationsResponse, error)
@@ -22293,6 +23011,9 @@ type ClientWithResponsesInterface interface {
 
 	ServiceAccountsAPICreateServiceAccountWithResponse(ctx context.Context, organizationId string, body ServiceAccountsAPICreateServiceAccountJSONRequestBody) (*ServiceAccountsAPICreateServiceAccountResponse, error)
 
+	// ServiceAccountsAPIListOrganizationServiceAccountKeys request
+	ServiceAccountsAPIListOrganizationServiceAccountKeysWithResponse(ctx context.Context, organizationId string, params *ServiceAccountsAPIListOrganizationServiceAccountKeysParams) (*ServiceAccountsAPIListOrganizationServiceAccountKeysResponse, error)
+
 	// ServiceAccountsAPIDeleteServiceAccount request
 	ServiceAccountsAPIDeleteServiceAccountWithResponse(ctx context.Context, organizationId string, serviceAccountId string) (*ServiceAccountsAPIDeleteServiceAccountResponse, error)
 
@@ -22335,7 +23056,7 @@ type ClientWithResponsesInterface interface {
 	UsersAPIAddUserToOrganizationWithResponse(ctx context.Context, organizationId string, body UsersAPIAddUserToOrganizationJSONRequestBody) (*UsersAPIAddUserToOrganizationResponse, error)
 
 	// UsersAPIRemoveUserFromOrganization request
-	UsersAPIRemoveUserFromOrganizationWithResponse(ctx context.Context, organizationId string, userId string) (*UsersAPIRemoveUserFromOrganizationResponse, error)
+	UsersAPIRemoveUserFromOrganizationWithResponse(ctx context.Context, organizationId string, userId string, params *UsersAPIRemoveUserFromOrganizationParams) (*UsersAPIRemoveUserFromOrganizationResponse, error)
 
 	// UsersAPIListUserGroups request
 	UsersAPIListUserGroupsWithResponse(ctx context.Context, organizationId string, userId string) (*UsersAPIListUserGroupsResponse, error)
@@ -22455,6 +23176,9 @@ type ClientWithResponsesInterface interface {
 
 	// RuntimeSecurityAPIGetRuntimeEventsProcessTree request
 	RuntimeSecurityAPIGetRuntimeEventsProcessTreeWithResponse(ctx context.Context, clusterId string, params *RuntimeSecurityAPIGetRuntimeEventsProcessTreeParams) (*RuntimeSecurityAPIGetRuntimeEventsProcessTreeResponse, error)
+
+	// RuntimeSecurityAPIGetClusterKvisorVersion request
+	RuntimeSecurityAPIGetClusterKvisorVersionWithResponse(ctx context.Context, clusterId string) (*RuntimeSecurityAPIGetClusterKvisorVersionResponse, error)
 
 	// RuntimeSecurityAPIGetLists request
 	RuntimeSecurityAPIGetListsWithResponse(ctx context.Context, params *RuntimeSecurityAPIGetListsParams) (*RuntimeSecurityAPIGetListsResponse, error)
@@ -22602,6 +23326,11 @@ type ClientWithResponsesInterface interface {
 	// WorkloadOptimizationAPIGetWorkloadScalingPolicy request
 	WorkloadOptimizationAPIGetWorkloadScalingPolicyWithResponse(ctx context.Context, clusterId string, policyId string) (*WorkloadOptimizationAPIGetWorkloadScalingPolicyResponse, error)
 
+	// WorkloadOptimizationAPIPatchWorkloadScalingPolicy request  with any body
+	WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBodyWithResponse(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse, error)
+
+	WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithResponse(ctx context.Context, clusterId string, policyId string, body WorkloadOptimizationAPIPatchWorkloadScalingPolicyJSONRequestBody) (*WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse, error)
+
 	// WorkloadOptimizationAPIUpdateWorkloadScalingPolicy request  with any body
 	WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBodyWithResponse(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse, error)
 
@@ -22670,6 +23399,11 @@ type ClientWithResponsesInterface interface {
 
 	// InventoryAPIListZones request
 	InventoryAPIListZonesWithResponse(ctx context.Context, params *InventoryAPIListZonesParams) (*InventoryAPIListZonesResponse, error)
+
+	// WorkloadOptimizationAPIQueryWorkloadMetrics request  with any body
+	WorkloadOptimizationAPIQueryWorkloadMetricsWithBodyWithResponse(ctx context.Context, clusterId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIQueryWorkloadMetricsResponse, error)
+
+	WorkloadOptimizationAPIQueryWorkloadMetricsWithResponse(ctx context.Context, clusterId string, body WorkloadOptimizationAPIQueryWorkloadMetricsJSONRequestBody) (*WorkloadOptimizationAPIQueryWorkloadMetricsResponse, error)
 
 	// WorkloadOptimizationAPIListClusterHPAs request
 	WorkloadOptimizationAPIListClusterHPAsWithResponse(ctx context.Context, clusterId string, params *WorkloadOptimizationAPIListClusterHPAsParams) (*WorkloadOptimizationAPIListClusterHPAsResponse, error)
@@ -26748,6 +27482,66 @@ func (r InventoryAPISyncClusterResourcesResponse) GetBody() []byte {
 
 // TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 
+type RbacServiceAPIListGroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CastaiRbacV1beta1ListGroupsResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r RbacServiceAPIListGroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RbacServiceAPIListGroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r RbacServiceAPIListGroupsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
+type RbacServiceAPIUpdateGroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]CastaiRbacV1beta1Group
+}
+
+// Status returns HTTPResponse.Status
+func (r RbacServiceAPIUpdateGroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RbacServiceAPIUpdateGroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r RbacServiceAPIUpdateGroupsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
 type RbacServiceAPICreateGroupResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -26863,6 +27657,36 @@ func (r RbacServiceAPIGetGroupResponse) StatusCode() int {
 // TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 // Body returns body of byte array
 func (r RbacServiceAPIGetGroupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
+type UsersAPILeaveOrganizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CastaiUsersV1beta1LeaveOrganizationResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r UsersAPILeaveOrganizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UsersAPILeaveOrganizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r UsersAPILeaveOrganizationResponse) GetBody() []byte {
 	return r.Body
 }
 
@@ -27284,6 +28108,36 @@ func (r ServiceAccountsAPICreateServiceAccountResponse) StatusCode() int {
 // TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 // Body returns body of byte array
 func (r ServiceAccountsAPICreateServiceAccountResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
+type ServiceAccountsAPIListOrganizationServiceAccountKeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CastaiServiceaccountsV1beta1ListOrganizationServiceAccountKeysResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ServiceAccountsAPIListOrganizationServiceAccountKeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ServiceAccountsAPIListOrganizationServiceAccountKeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r ServiceAccountsAPIListOrganizationServiceAccountKeysResponse) GetBody() []byte {
 	return r.Body
 }
 
@@ -28638,6 +29492,36 @@ func (r RuntimeSecurityAPIGetRuntimeEventsProcessTreeResponse) GetBody() []byte 
 
 // TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 
+type RuntimeSecurityAPIGetClusterKvisorVersionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeV1GetClusterKvisorVersionResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r RuntimeSecurityAPIGetClusterKvisorVersionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RuntimeSecurityAPIGetClusterKvisorVersionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r RuntimeSecurityAPIGetClusterKvisorVersionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
 type RuntimeSecurityAPIGetListsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -29778,6 +30662,36 @@ func (r WorkloadOptimizationAPIGetWorkloadScalingPolicyResponse) GetBody() []byt
 
 // TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 
+type WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WorkloadoptimizationV1WorkloadScalingPolicy
+}
+
+// Status returns HTTPResponse.Status
+func (r WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
 type WorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -30408,6 +31322,36 @@ func (r InventoryAPIListZonesResponse) GetBody() []byte {
 
 // TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
 
+type WorkloadOptimizationAPIQueryWorkloadMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WorkloadoptimizationV1QueryWorkloadMetricsResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r WorkloadOptimizationAPIQueryWorkloadMetricsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WorkloadOptimizationAPIQueryWorkloadMetricsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// TODO: <castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+// Body returns body of byte array
+func (r WorkloadOptimizationAPIQueryWorkloadMetricsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// TODO: </castai customization> to have common interface. https://github.com/deepmap/oapi-codegen/issues/240
+
 type WorkloadOptimizationAPIListClusterHPAsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -30999,8 +31943,8 @@ func (c *ClientWithResponses) DboAPIGetCacheConfigurationWithResponse(ctx contex
 }
 
 // DboAPIDeleteCacheConfigurationWithResponse request returning *DboAPIDeleteCacheConfigurationResponse
-func (c *ClientWithResponses) DboAPIDeleteCacheConfigurationWithResponse(ctx context.Context, groupId string, id string) (*DboAPIDeleteCacheConfigurationResponse, error) {
-	rsp, err := c.DboAPIDeleteCacheConfiguration(ctx, groupId, id)
+func (c *ClientWithResponses) DboAPIDeleteCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, params *DboAPIDeleteCacheConfigurationParams) (*DboAPIDeleteCacheConfigurationResponse, error) {
+	rsp, err := c.DboAPIDeleteCacheConfiguration(ctx, groupId, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -31008,16 +31952,16 @@ func (c *ClientWithResponses) DboAPIDeleteCacheConfigurationWithResponse(ctx con
 }
 
 // DboAPIUpdateCacheConfigurationWithBodyWithResponse request with arbitrary body returning *DboAPIUpdateCacheConfigurationResponse
-func (c *ClientWithResponses) DboAPIUpdateCacheConfigurationWithBodyWithResponse(ctx context.Context, groupId string, id string, contentType string, body io.Reader) (*DboAPIUpdateCacheConfigurationResponse, error) {
-	rsp, err := c.DboAPIUpdateCacheConfigurationWithBody(ctx, groupId, id, contentType, body)
+func (c *ClientWithResponses) DboAPIUpdateCacheConfigurationWithBodyWithResponse(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, contentType string, body io.Reader) (*DboAPIUpdateCacheConfigurationResponse, error) {
+	rsp, err := c.DboAPIUpdateCacheConfigurationWithBody(ctx, groupId, id, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
 	return ParseDboAPIUpdateCacheConfigurationResponse(rsp)
 }
 
-func (c *ClientWithResponses) DboAPIUpdateCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*DboAPIUpdateCacheConfigurationResponse, error) {
-	rsp, err := c.DboAPIUpdateCacheConfiguration(ctx, groupId, id, body)
+func (c *ClientWithResponses) DboAPIUpdateCacheConfigurationWithResponse(ctx context.Context, groupId string, id string, params *DboAPIUpdateCacheConfigurationParams, body DboAPIUpdateCacheConfigurationJSONRequestBody) (*DboAPIUpdateCacheConfigurationResponse, error) {
+	rsp, err := c.DboAPIUpdateCacheConfiguration(ctx, groupId, id, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -32125,6 +33069,32 @@ func (c *ClientWithResponses) InventoryAPISyncClusterResourcesWithResponse(ctx c
 	return ParseInventoryAPISyncClusterResourcesResponse(rsp)
 }
 
+// RbacServiceAPIListGroupsWithResponse request returning *RbacServiceAPIListGroupsResponse
+func (c *ClientWithResponses) RbacServiceAPIListGroupsWithResponse(ctx context.Context, organizationId string, params *RbacServiceAPIListGroupsParams) (*RbacServiceAPIListGroupsResponse, error) {
+	rsp, err := c.RbacServiceAPIListGroups(ctx, organizationId, params)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRbacServiceAPIListGroupsResponse(rsp)
+}
+
+// RbacServiceAPIUpdateGroupsWithBodyWithResponse request with arbitrary body returning *RbacServiceAPIUpdateGroupsResponse
+func (c *ClientWithResponses) RbacServiceAPIUpdateGroupsWithBodyWithResponse(ctx context.Context, organizationId string, contentType string, body io.Reader) (*RbacServiceAPIUpdateGroupsResponse, error) {
+	rsp, err := c.RbacServiceAPIUpdateGroupsWithBody(ctx, organizationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRbacServiceAPIUpdateGroupsResponse(rsp)
+}
+
+func (c *ClientWithResponses) RbacServiceAPIUpdateGroupsWithResponse(ctx context.Context, organizationId string, body RbacServiceAPIUpdateGroupsJSONRequestBody) (*RbacServiceAPIUpdateGroupsResponse, error) {
+	rsp, err := c.RbacServiceAPIUpdateGroups(ctx, organizationId, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRbacServiceAPIUpdateGroupsResponse(rsp)
+}
+
 // RbacServiceAPICreateGroupWithBodyWithResponse request with arbitrary body returning *RbacServiceAPICreateGroupResponse
 func (c *ClientWithResponses) RbacServiceAPICreateGroupWithBodyWithResponse(ctx context.Context, organizationId string, contentType string, body io.Reader) (*RbacServiceAPICreateGroupResponse, error) {
 	rsp, err := c.RbacServiceAPICreateGroupWithBody(ctx, organizationId, contentType, body)
@@ -32175,6 +33145,15 @@ func (c *ClientWithResponses) RbacServiceAPIGetGroupWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseRbacServiceAPIGetGroupResponse(rsp)
+}
+
+// UsersAPILeaveOrganizationWithResponse request returning *UsersAPILeaveOrganizationResponse
+func (c *ClientWithResponses) UsersAPILeaveOrganizationWithResponse(ctx context.Context, organizationId string, params *UsersAPILeaveOrganizationParams) (*UsersAPILeaveOrganizationResponse, error) {
+	rsp, err := c.UsersAPILeaveOrganization(ctx, organizationId, params)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUsersAPILeaveOrganizationResponse(rsp)
 }
 
 // InventoryAPIGetReservationsWithResponse request returning *InventoryAPIGetReservationsResponse
@@ -32343,6 +33322,15 @@ func (c *ClientWithResponses) ServiceAccountsAPICreateServiceAccountWithResponse
 	return ParseServiceAccountsAPICreateServiceAccountResponse(rsp)
 }
 
+// ServiceAccountsAPIListOrganizationServiceAccountKeysWithResponse request returning *ServiceAccountsAPIListOrganizationServiceAccountKeysResponse
+func (c *ClientWithResponses) ServiceAccountsAPIListOrganizationServiceAccountKeysWithResponse(ctx context.Context, organizationId string, params *ServiceAccountsAPIListOrganizationServiceAccountKeysParams) (*ServiceAccountsAPIListOrganizationServiceAccountKeysResponse, error) {
+	rsp, err := c.ServiceAccountsAPIListOrganizationServiceAccountKeys(ctx, organizationId, params)
+	if err != nil {
+		return nil, err
+	}
+	return ParseServiceAccountsAPIListOrganizationServiceAccountKeysResponse(rsp)
+}
+
 // ServiceAccountsAPIDeleteServiceAccountWithResponse request returning *ServiceAccountsAPIDeleteServiceAccountResponse
 func (c *ClientWithResponses) ServiceAccountsAPIDeleteServiceAccountWithResponse(ctx context.Context, organizationId string, serviceAccountId string) (*ServiceAccountsAPIDeleteServiceAccountResponse, error) {
 	rsp, err := c.ServiceAccountsAPIDeleteServiceAccount(ctx, organizationId, serviceAccountId)
@@ -32475,8 +33463,8 @@ func (c *ClientWithResponses) UsersAPIAddUserToOrganizationWithResponse(ctx cont
 }
 
 // UsersAPIRemoveUserFromOrganizationWithResponse request returning *UsersAPIRemoveUserFromOrganizationResponse
-func (c *ClientWithResponses) UsersAPIRemoveUserFromOrganizationWithResponse(ctx context.Context, organizationId string, userId string) (*UsersAPIRemoveUserFromOrganizationResponse, error) {
-	rsp, err := c.UsersAPIRemoveUserFromOrganization(ctx, organizationId, userId)
+func (c *ClientWithResponses) UsersAPIRemoveUserFromOrganizationWithResponse(ctx context.Context, organizationId string, userId string, params *UsersAPIRemoveUserFromOrganizationParams) (*UsersAPIRemoveUserFromOrganizationResponse, error) {
+	rsp, err := c.UsersAPIRemoveUserFromOrganization(ctx, organizationId, userId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -32858,6 +33846,15 @@ func (c *ClientWithResponses) RuntimeSecurityAPIGetRuntimeEventsProcessTreeWithR
 		return nil, err
 	}
 	return ParseRuntimeSecurityAPIGetRuntimeEventsProcessTreeResponse(rsp)
+}
+
+// RuntimeSecurityAPIGetClusterKvisorVersionWithResponse request returning *RuntimeSecurityAPIGetClusterKvisorVersionResponse
+func (c *ClientWithResponses) RuntimeSecurityAPIGetClusterKvisorVersionWithResponse(ctx context.Context, clusterId string) (*RuntimeSecurityAPIGetClusterKvisorVersionResponse, error) {
+	rsp, err := c.RuntimeSecurityAPIGetClusterKvisorVersion(ctx, clusterId)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRuntimeSecurityAPIGetClusterKvisorVersionResponse(rsp)
 }
 
 // RuntimeSecurityAPIGetListsWithResponse request returning *RuntimeSecurityAPIGetListsResponse
@@ -33330,6 +34327,23 @@ func (c *ClientWithResponses) WorkloadOptimizationAPIGetWorkloadScalingPolicyWit
 	return ParseWorkloadOptimizationAPIGetWorkloadScalingPolicyResponse(rsp)
 }
 
+// WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBodyWithResponse request with arbitrary body returning *WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse
+func (c *ClientWithResponses) WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBodyWithResponse(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse, error) {
+	rsp, err := c.WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithBody(ctx, clusterId, policyId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse(rsp)
+}
+
+func (c *ClientWithResponses) WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithResponse(ctx context.Context, clusterId string, policyId string, body WorkloadOptimizationAPIPatchWorkloadScalingPolicyJSONRequestBody) (*WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse, error) {
+	rsp, err := c.WorkloadOptimizationAPIPatchWorkloadScalingPolicy(ctx, clusterId, policyId, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse(rsp)
+}
+
 // WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBodyWithResponse request with arbitrary body returning *WorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse
 func (c *ClientWithResponses) WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBodyWithResponse(ctx context.Context, clusterId string, policyId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse, error) {
 	rsp, err := c.WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithBody(ctx, clusterId, policyId, contentType, body)
@@ -33541,6 +34555,23 @@ func (c *ClientWithResponses) InventoryAPIListZonesWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseInventoryAPIListZonesResponse(rsp)
+}
+
+// WorkloadOptimizationAPIQueryWorkloadMetricsWithBodyWithResponse request with arbitrary body returning *WorkloadOptimizationAPIQueryWorkloadMetricsResponse
+func (c *ClientWithResponses) WorkloadOptimizationAPIQueryWorkloadMetricsWithBodyWithResponse(ctx context.Context, clusterId string, contentType string, body io.Reader) (*WorkloadOptimizationAPIQueryWorkloadMetricsResponse, error) {
+	rsp, err := c.WorkloadOptimizationAPIQueryWorkloadMetricsWithBody(ctx, clusterId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorkloadOptimizationAPIQueryWorkloadMetricsResponse(rsp)
+}
+
+func (c *ClientWithResponses) WorkloadOptimizationAPIQueryWorkloadMetricsWithResponse(ctx context.Context, clusterId string, body WorkloadOptimizationAPIQueryWorkloadMetricsJSONRequestBody) (*WorkloadOptimizationAPIQueryWorkloadMetricsResponse, error) {
+	rsp, err := c.WorkloadOptimizationAPIQueryWorkloadMetrics(ctx, clusterId, body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorkloadOptimizationAPIQueryWorkloadMetricsResponse(rsp)
 }
 
 // WorkloadOptimizationAPIListClusterHPAsWithResponse request returning *WorkloadOptimizationAPIListClusterHPAsResponse
@@ -37094,6 +38125,58 @@ func ParseInventoryAPISyncClusterResourcesResponse(rsp *http.Response) (*Invento
 	return response, nil
 }
 
+// ParseRbacServiceAPIListGroupsResponse parses an HTTP response from a RbacServiceAPIListGroupsWithResponse call
+func ParseRbacServiceAPIListGroupsResponse(rsp *http.Response) (*RbacServiceAPIListGroupsResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RbacServiceAPIListGroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CastaiRbacV1beta1ListGroupsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRbacServiceAPIUpdateGroupsResponse parses an HTTP response from a RbacServiceAPIUpdateGroupsWithResponse call
+func ParseRbacServiceAPIUpdateGroupsResponse(rsp *http.Response) (*RbacServiceAPIUpdateGroupsResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RbacServiceAPIUpdateGroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []CastaiRbacV1beta1Group
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRbacServiceAPICreateGroupResponse parses an HTTP response from a RbacServiceAPICreateGroupWithResponse call
 func ParseRbacServiceAPICreateGroupResponse(rsp *http.Response) (*RbacServiceAPICreateGroupResponse, error) {
 	bodyBytes, err := ioutil.ReadAll(rsp.Body)
@@ -37188,6 +38271,32 @@ func ParseRbacServiceAPIGetGroupResponse(rsp *http.Response) (*RbacServiceAPIGet
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest CastaiRbacV1beta1Group
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUsersAPILeaveOrganizationResponse parses an HTTP response from a UsersAPILeaveOrganizationWithResponse call
+func ParseUsersAPILeaveOrganizationResponse(rsp *http.Response) (*UsersAPILeaveOrganizationResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UsersAPILeaveOrganizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CastaiUsersV1beta1LeaveOrganizationResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -37563,6 +38672,32 @@ func ParseServiceAccountsAPICreateServiceAccountResponse(rsp *http.Response) (*S
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseServiceAccountsAPIListOrganizationServiceAccountKeysResponse parses an HTTP response from a ServiceAccountsAPIListOrganizationServiceAccountKeysWithResponse call
+func ParseServiceAccountsAPIListOrganizationServiceAccountKeysResponse(rsp *http.Response) (*ServiceAccountsAPIListOrganizationServiceAccountKeysResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ServiceAccountsAPIListOrganizationServiceAccountKeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CastaiServiceaccountsV1beta1ListOrganizationServiceAccountKeysResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	}
 
@@ -38723,6 +39858,32 @@ func ParseRuntimeSecurityAPIGetRuntimeEventsProcessTreeResponse(rsp *http.Respon
 	return response, nil
 }
 
+// ParseRuntimeSecurityAPIGetClusterKvisorVersionResponse parses an HTTP response from a RuntimeSecurityAPIGetClusterKvisorVersionWithResponse call
+func ParseRuntimeSecurityAPIGetClusterKvisorVersionResponse(rsp *http.Response) (*RuntimeSecurityAPIGetClusterKvisorVersionResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RuntimeSecurityAPIGetClusterKvisorVersionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeV1GetClusterKvisorVersionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRuntimeSecurityAPIGetListsResponse parses an HTTP response from a RuntimeSecurityAPIGetListsWithResponse call
 func ParseRuntimeSecurityAPIGetListsResponse(rsp *http.Response) (*RuntimeSecurityAPIGetListsResponse, error) {
 	bodyBytes, err := ioutil.ReadAll(rsp.Body)
@@ -39711,6 +40872,32 @@ func ParseWorkloadOptimizationAPIGetWorkloadScalingPolicyResponse(rsp *http.Resp
 	return response, nil
 }
 
+// ParseWorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse parses an HTTP response from a WorkloadOptimizationAPIPatchWorkloadScalingPolicyWithResponse call
+func ParseWorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse(rsp *http.Response) (*WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WorkloadOptimizationAPIPatchWorkloadScalingPolicyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkloadoptimizationV1WorkloadScalingPolicy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseWorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse parses an HTTP response from a WorkloadOptimizationAPIUpdateWorkloadScalingPolicyWithResponse call
 func ParseWorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse(rsp *http.Response) (*WorkloadOptimizationAPIUpdateWorkloadScalingPolicyResponse, error) {
 	bodyBytes, err := ioutil.ReadAll(rsp.Body)
@@ -40247,6 +41434,32 @@ func ParseInventoryAPIListZonesResponse(rsp *http.Response) (*InventoryAPIListZo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest CastaiInventoryV1beta1ListZonesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWorkloadOptimizationAPIQueryWorkloadMetricsResponse parses an HTTP response from a WorkloadOptimizationAPIQueryWorkloadMetricsWithResponse call
+func ParseWorkloadOptimizationAPIQueryWorkloadMetricsResponse(rsp *http.Response) (*WorkloadOptimizationAPIQueryWorkloadMetricsResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WorkloadOptimizationAPIQueryWorkloadMetricsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkloadoptimizationV1QueryWorkloadMetricsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

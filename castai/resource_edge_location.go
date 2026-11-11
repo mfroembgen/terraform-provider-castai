@@ -52,11 +52,13 @@ type edgeLocationModel struct {
 	ControlPlaneMode types.String       `tfsdk:"control_plane_mode"`
 	ControlPlane     *controlPlaneModel `tfsdk:"control_plane"`
 	Networking       *networkingModel   `tfsdk:"networking"`
+	Liqo             *liqoModel         `tfsdk:"liqo"`
 	Addons           []addonModel       `tfsdk:"addons"`
 	Zones            []zoneModel        `tfsdk:"zones"`
 	AWS              *awsModel          `tfsdk:"aws"`
 	GCP              *gcpModel          `tfsdk:"gcp"`
 	OCI              *ociModel          `tfsdk:"oci"`
+	Nebius           *nebiusModel       `tfsdk:"nebius"`
 	Custom           *customModel       `tfsdk:"custom"`
 	// Computed revision number incremented each time credentials have changed.
 	CredentialsRevision types.Int64 `tfsdk:"credentials_revision"`
@@ -87,14 +89,22 @@ var defaultAddonsList = types.ListValueMust(addonObjectType, []attr.Value{
 })
 
 type controlPlaneModel struct {
-	Ha types.Bool `tfsdk:"ha"`
+	Ha                 types.Bool   `tfsdk:"ha"`
+	ExternalAddress    types.String `tfsdk:"external_address"`
+	APIServerPort      types.Int32  `tfsdk:"api_server_port"`
+	KonnectivityPort   types.Int32  `tfsdk:"konnectivity_port"`
+	ServiceAnnotations types.Map    `tfsdk:"service_annotations"`
 }
 
 func (m *controlPlaneModel) Equal(other *controlPlaneModel) bool {
 	if m == nil || other == nil {
 		return m == other
 	}
-	return m.Ha.Equal(other.Ha)
+	return m.Ha.Equal(other.Ha) &&
+		m.ExternalAddress.Equal(other.ExternalAddress) &&
+		m.APIServerPort.Equal(other.APIServerPort) &&
+		m.KonnectivityPort.Equal(other.KonnectivityPort) &&
+		m.ServiceAnnotations.Equal(other.ServiceAnnotations)
 }
 
 type cniModel struct {
@@ -107,6 +117,35 @@ func (m *cniModel) Equal(other *cniModel) bool {
 		return m == other
 	}
 	return m.Overlay.Equal(other.Overlay) && m.OverlayEncap.Equal(other.OverlayEncap)
+}
+
+type liqoModel struct {
+	GatewayReplicas types.Int32         `tfsdk:"gateway_replicas"`
+	GatewayServer   *gatewayServerModel `tfsdk:"gateway_server"`
+}
+
+func (m *liqoModel) Equal(other *liqoModel) bool {
+	if m == nil || other == nil {
+		return m == other
+	}
+	return m.GatewayReplicas.Equal(other.GatewayReplicas) && m.GatewayServer.Equal(other.GatewayServer)
+}
+
+type gatewayServerModel struct {
+	ServiceLabels      types.Map    `tfsdk:"service_labels"`
+	ServiceAnnotations types.Map    `tfsdk:"service_annotations"`
+	ExternalAddress    types.String `tfsdk:"external_address"`
+	ExternalPort       types.Int32  `tfsdk:"external_port"`
+}
+
+func (m *gatewayServerModel) Equal(other *gatewayServerModel) bool {
+	if m == nil || other == nil {
+		return m == other
+	}
+	return m.ServiceLabels.Equal(other.ServiceLabels) &&
+		m.ServiceAnnotations.Equal(other.ServiceAnnotations) &&
+		m.ExternalAddress.Equal(other.ExternalAddress) &&
+		m.ExternalPort.Equal(other.ExternalPort)
 }
 
 type networkingModel struct {
@@ -173,11 +212,21 @@ type ociModel struct {
 	PrivateKeyBase64WO types.String `tfsdk:"private_key_base64_wo"`
 	VcnID              types.String `tfsdk:"vcn_id"`
 	VcnCidr            types.String `tfsdk:"vcn_cidr"`
+	VcnPeered          types.Bool   `tfsdk:"vcn_peered"`
 	SubnetID           types.String `tfsdk:"subnet_id"`
 	SecurityGroupID    types.String `tfsdk:"security_group_id"`
 }
 
 type customModel struct{}
+
+type nebiusModel struct {
+	ParentID         types.String `tfsdk:"parent_id"`
+	ServiceAccountID types.String `tfsdk:"service_account_id"`
+	NetworkID        types.String `tfsdk:"network_id"`
+	SubnetID         types.String `tfsdk:"subnet_id"`
+	SubnetCidr       types.String `tfsdk:"subnet_cidr"`
+	SecurityGroupID  types.String `tfsdk:"security_group_id"`
+}
 
 func (m customModel) credentials() types.String {
 	return types.StringNull()
@@ -243,6 +292,22 @@ func (m ociModel) Equal(other *ociModel) bool {
 		m.CompartmentID.Equal(other.CompartmentID) &&
 		m.VcnID.Equal(other.VcnID) &&
 		m.VcnCidr.Equal(other.VcnCidr) &&
+		m.VcnPeered.Equal(other.VcnPeered) &&
+		m.SubnetID.Equal(other.SubnetID) &&
+		m.SecurityGroupID.Equal(other.SecurityGroupID)
+}
+
+func (m nebiusModel) credentials() types.String {
+	return types.StringNull()
+}
+
+func (m nebiusModel) Equal(other *nebiusModel) bool {
+	if other == nil {
+		return false
+	}
+	return m.ParentID.Equal(other.ParentID) &&
+		m.ServiceAccountID.Equal(other.ServiceAccountID) &&
+		m.NetworkID.Equal(other.NetworkID) &&
 		m.SubnetID.Equal(other.SubnetID) &&
 		m.SecurityGroupID.Equal(other.SecurityGroupID)
 }
@@ -261,6 +326,7 @@ func (r *edgeLocationResource) ConfigValidators(_ context.Context) []resource.Co
 			path.MatchRoot("aws"),
 			path.MatchRoot("gcp"),
 			path.MatchRoot("oci"),
+			path.MatchRoot("nebius"),
 			path.MatchRoot("custom"),
 		),
 	}
@@ -316,13 +382,13 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 			"control_plane_mode": schema.StringAttribute{
 				Optional:    true,
 				Computed:    true,
-				Default:     stringdefault.StaticString(string(omni.DEDICATED)),
+				Default:     stringdefault.StaticString(string(omni.EdgeLocationControlPlaneModeDEDICATED)),
 				Description: "The mode of control plane inside edge location. Valid values: DEDICATED, SHARED.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 				Validators: []validator.String{
-					stringvalidator.OneOf(string(omni.DEDICATED), string(omni.SHARED)),
+					stringvalidator.OneOf(string(omni.EdgeLocationControlPlaneModeDEDICATED), string(omni.EdgeLocationControlPlaneModeSHARED)),
 				},
 			},
 			"control_plane": schema.SingleNestedAttribute{
@@ -336,6 +402,23 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 						PlanModifiers: []planmodifier.Bool{
 							boolplanmodifier.UseStateForUnknown(),
 						},
+					},
+					"external_address": schema.StringAttribute{
+						Optional:    true,
+						Description: "The IP address or hostname used to reach the API server from outside the cluster, if in-cluster LoadBalancer services are not reachable (e.g. cluster is hidden behind an external LoadBalancer).",
+					},
+					"api_server_port": schema.Int32Attribute{
+						Optional:    true,
+						Description: "The port used for the API server. Defaults to the system value when unset.",
+					},
+					"konnectivity_port": schema.Int32Attribute{
+						Optional:    true,
+						Description: "The port used for the konnectivity server. Defaults to the system value when unset.",
+					},
+					"service_annotations": schema.MapAttribute{
+						Optional:    true,
+						ElementType: types.StringType,
+						Description: "Custom annotations to apply to the control plane service.",
 					},
 				},
 			},
@@ -357,10 +440,10 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 								Description: "Overlay mode for kube-router pod-to-pod traffic. Valid values: OVERLAY_UNSPECIFIED, OVERLAY_OFF, OVERLAY_SUBNET, OVERLAY_FULL.",
 								Validators: []validator.String{
 									stringvalidator.OneOf(
-										string(omni.OVERLAYUNSPECIFIED),
-										string(omni.OVERLAYOFF),
-										string(omni.OVERLAYSUBNET),
-										string(omni.OVERLAYFULL),
+										string(omni.EdgeClusterCNIOverlayOVERLAYUNSPECIFIED),
+										string(omni.EdgeClusterCNIOverlayOVERLAYOFF),
+										string(omni.EdgeClusterCNIOverlayOVERLAYSUBNET),
+										string(omni.EdgeClusterCNIOverlayOVERLAYFULL),
 									),
 								},
 							},
@@ -369,11 +452,45 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 								Description: "Encapsulation protocol used by the overlay. Valid values: OVERLAY_ENCAP_UNSPECIFIED, OVERLAY_ENCAP_IPIP, OVERLAY_ENCAP_FOU.",
 								Validators: []validator.String{
 									stringvalidator.OneOf(
-										string(omni.OVERLAYENCAPUNSPECIFIED),
-										string(omni.OVERLAYENCAPIPIP),
-										string(omni.OVERLAYENCAPFOU),
+										string(omni.EdgeClusterCNIOverlayEncapOVERLAYENCAPUNSPECIFIED),
+										string(omni.EdgeClusterCNIOverlayEncapOVERLAYENCAPIPIP),
+										string(omni.EdgeClusterCNIOverlayEncapOVERLAYENCAPFOU),
 									),
 								},
+							},
+						},
+					},
+				},
+			},
+			"liqo": schema.SingleNestedAttribute{
+				Optional:    true,
+				Description: "Liqo configuration for the edge cluster.",
+				Attributes: map[string]schema.Attribute{
+					"gateway_replicas": schema.Int32Attribute{
+						Optional:    true,
+						Description: "Number of active replicas for the Liqo gateway servers and clients. Defaults to 1 when unset.",
+					},
+					"gateway_server": schema.SingleNestedAttribute{
+						Optional:    true,
+						Description: "Configuration overrides for the Liqo gateway server.",
+						Attributes: map[string]schema.Attribute{
+							"service_labels": schema.MapAttribute{
+								Optional:    true,
+								ElementType: types.StringType,
+								Description: "Custom labels to apply to the Liqo gateway service.",
+							},
+							"service_annotations": schema.MapAttribute{
+								Optional:    true,
+								ElementType: types.StringType,
+								Description: "Custom annotations to apply to the Liqo gateway service.",
+							},
+							"external_address": schema.StringAttribute{
+								Optional:    true,
+								Description: "The IP address or hostname used to reach the Liqo gateway server from outside the cluster.",
+							},
+							"external_port": schema.Int32Attribute{
+								Optional:    true,
+								Description: "The port used for the Liqo gateway server.",
 							},
 						},
 					},
@@ -572,6 +689,10 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 						Optional:    true,
 						Description: "OCI VCN IPv4 CIDR block",
 					},
+					"vcn_peered": schema.BoolAttribute{
+						Optional:    true,
+						Description: "Whether existing VCN is peered with main cluster's network. Field is ignored if vcn_id is not provided or main cluster does not support internal load balancers. Omit the attribute instead of setting it to false to disable peering.",
+					},
 					"subnet_id": schema.StringAttribute{
 						Required:    true,
 						Description: "OCI subnet ID of edge location",
@@ -586,6 +707,39 @@ func (r *edgeLocationResource) Schema(_ context.Context, _ resource.SchemaReques
 				Optional:    true,
 				Description: "Custom cloud provider configuration for the edge location",
 				Attributes:  map[string]schema.Attribute{},
+			},
+			"nebius": schema.SingleNestedAttribute{
+				Optional:    true,
+				Description: "Nebius configuration for the edge location",
+				Validators: []validator.Object{
+					objectvalidator.AlsoRequires(path.MatchRoot("region")),
+				},
+				Attributes: map[string]schema.Attribute{
+					"parent_id": schema.StringAttribute{
+						Required:    true,
+						Description: "Nebius project ID that owns the edge location resources",
+					},
+					"service_account_id": schema.StringAttribute{
+						Required:    true,
+						Description: "Nebius service account ID to be impersonated by CAST AI",
+					},
+					"network_id": schema.StringAttribute{
+						Required:    true,
+						Description: "The ID of the VPC network to be used in the selected region",
+					},
+					"subnet_id": schema.StringAttribute{
+						Required:    true,
+						Description: "The ID of the subnet to be used in the selected region",
+					},
+					"subnet_cidr": schema.StringAttribute{
+						Optional:    true,
+						Description: "The IPv4 CIDR block of the subnet",
+					},
+					"security_group_id": schema.StringAttribute{
+						Optional:    true,
+						Description: "The ID of the security group to be used in the selected region",
+					},
+				},
 			},
 		},
 	}
@@ -634,7 +788,7 @@ func (r *edgeLocationResource) Create(ctx context.Context, req resource.CreateRe
 		createReq.Description = lo.ToPtr(plan.Description.ValueString())
 	}
 
-	createReq.EdgeClusterSpec, diags = r.toEdgeClusterSpec(ctx, plan.ControlPlane, plan.Networking, plan.Addons)
+	createReq.EdgeClusterSpec, diags = r.toEdgeClusterSpec(ctx, plan.ControlPlane, plan.Networking, plan.Addons, plan.Liqo)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -653,6 +807,10 @@ func (r *edgeLocationResource) Create(ctx context.Context, req resource.CreateRe
 	if plan.OCI != nil {
 		createReq.Oci = r.toOCI(plan.OCI, config.OCI)
 		mc = config.OCI
+	}
+	if plan.Nebius != nil {
+		createReq.Nebius = r.toNebius(plan.Nebius, config.Nebius)
+		mc = config.Nebius
 	}
 	if plan.Custom != nil {
 		createReq.Custom = r.toCustom(plan.Custom, config.Custom)
@@ -736,9 +894,31 @@ func (r *edgeLocationResource) Read(ctx context.Context, req resource.ReadReques
 		// Only sync control_plane from API if it was already managed in state.
 		// Otherwise, we'd cause perpetual drift for users who never set the block.
 		if state.ControlPlane != nil && edgeLocation.EdgeClusterSpec.ControlPlane != nil {
-			state.ControlPlane = &controlPlaneModel{
-				Ha: types.BoolPointerValue(edgeLocation.EdgeClusterSpec.ControlPlane.Ha),
+			apiCP := edgeLocation.EdgeClusterSpec.ControlPlane
+			// ha is Computed, so it is always present in state; refresh it from the API.
+			// The remaining attributes are Optional-only: only refresh those the user
+			// actually configured, otherwise API-assigned defaults would be written to
+			// state for attributes absent from the config, causing perpetual drift.
+			cp := &controlPlaneModel{
+				Ha:                 types.BoolPointerValue(apiCP.Ha),
+				ExternalAddress:    state.ControlPlane.ExternalAddress,
+				APIServerPort:      state.ControlPlane.APIServerPort,
+				KonnectivityPort:   state.ControlPlane.KonnectivityPort,
+				ServiceAnnotations: state.ControlPlane.ServiceAnnotations,
 			}
+			if !cp.ExternalAddress.IsNull() {
+				cp.ExternalAddress = types.StringPointerValue(apiCP.ExternalAddress)
+			}
+			if !cp.APIServerPort.IsNull() {
+				cp.APIServerPort = types.Int32PointerValue(apiCP.ApiServerPort)
+			}
+			if !cp.KonnectivityPort.IsNull() {
+				cp.KonnectivityPort = types.Int32PointerValue(apiCP.KonnectivityPort)
+			}
+			if !cp.ServiceAnnotations.IsNull() {
+				cp.ServiceAnnotations = stringMapValue(ctx, apiCP.ServiceAnnotations, &resp.Diagnostics)
+			}
+			state.ControlPlane = cp
 		}
 		// Only sync networking from API if it was already managed in state.
 		// Otherwise, we'd cause perpetual drift for users who never set the block.
@@ -755,10 +935,10 @@ func (r *edgeLocationResource) Read(ctx context.Context, req resource.ReadReques
 
 				// Treat UNSPECIFIED values from the API as null when the user hasn't
 				// explicitly set them, to avoid perpetual diffs.
-				if state.Networking.CNI.Overlay.IsNull() && overlay.ValueString() == string(omni.OVERLAYUNSPECIFIED) {
+				if state.Networking.CNI.Overlay.IsNull() && overlay.ValueString() == string(omni.EdgeClusterCNIOverlayOVERLAYUNSPECIFIED) {
 					overlay = types.StringNull()
 				}
-				if state.Networking.CNI.OverlayEncap.IsNull() && overlayEncap.ValueString() == string(omni.OVERLAYENCAPUNSPECIFIED) {
+				if state.Networking.CNI.OverlayEncap.IsNull() && overlayEncap.ValueString() == string(omni.EdgeClusterCNIOverlayEncapOVERLAYENCAPUNSPECIFIED) {
 					overlayEncap = types.StringNull()
 				}
 
@@ -766,6 +946,49 @@ func (r *edgeLocationResource) Read(ctx context.Context, req resource.ReadReques
 					Overlay:      overlay,
 					OverlayEncap: overlayEncap,
 				}
+			}
+		}
+		// Only sync liqo from API if it was already managed in state.
+		// Otherwise, we'd cause perpetual drift for users who never set the block.
+		if state.Liqo != nil && edgeLocation.EdgeClusterSpec.Liqo != nil {
+			apiLiqo := edgeLocation.EdgeClusterSpec.Liqo
+			// Only sync the gateway server (and its attributes) that were already managed
+			// in state, evaluated against the current state before state.Liqo is rebuilt
+			// below. Otherwise the check would run against the freshly allocated struct and
+			// always be false, and API-assigned defaults would be written to state for
+			// attributes absent from the config, causing perpetual drift.
+			var gatewayServer *gatewayServerModel
+			if state.Liqo.GatewayServer != nil && apiLiqo.GatewayServer != nil {
+				apiGS := apiLiqo.GatewayServer
+				gatewayServer = &gatewayServerModel{
+					ServiceLabels:      state.Liqo.GatewayServer.ServiceLabels,
+					ServiceAnnotations: state.Liqo.GatewayServer.ServiceAnnotations,
+					ExternalAddress:    state.Liqo.GatewayServer.ExternalAddress,
+					ExternalPort:       state.Liqo.GatewayServer.ExternalPort,
+				}
+				if !gatewayServer.ServiceLabels.IsNull() {
+					gatewayServer.ServiceLabels = stringMapValue(ctx, apiGS.ServiceLabels, &resp.Diagnostics)
+				}
+				if !gatewayServer.ServiceAnnotations.IsNull() {
+					gatewayServer.ServiceAnnotations = stringMapValue(ctx, apiGS.ServiceAnnotations, &resp.Diagnostics)
+				}
+				if !gatewayServer.ExternalAddress.IsNull() {
+					gatewayServer.ExternalAddress = types.StringPointerValue(apiGS.ExternalAddress)
+				}
+				if !gatewayServer.ExternalPort.IsNull() {
+					gatewayServer.ExternalPort = types.Int32PointerValue(apiGS.ExternalPort)
+				}
+			}
+			// gateway_replicas is Optional-only: only refresh it if the user configured it,
+			// otherwise the API default would be written to state for an attribute absent
+			// from the config, causing perpetual drift.
+			gatewayReplicas := state.Liqo.GatewayReplicas
+			if !gatewayReplicas.IsNull() {
+				gatewayReplicas = types.Int32PointerValue(apiLiqo.GatewayReplicas)
+			}
+			state.Liqo = &liqoModel{
+				GatewayReplicas: gatewayReplicas,
+				GatewayServer:   gatewayServer,
 			}
 		}
 		if edgeLocation.EdgeClusterSpec.Addons != nil {
@@ -786,6 +1009,9 @@ func (r *edgeLocationResource) Read(ctx context.Context, req resource.ReadReques
 	}
 	if edgeLocation.Oci != nil {
 		state.OCI = r.toOCIModel(edgeLocation.Oci)
+	}
+	if edgeLocation.Nebius != nil {
+		state.Nebius = r.toNebiusModel(edgeLocation.Nebius)
 	}
 	if edgeLocation.Custom != nil {
 		state.Custom = r.toCustomModel(edgeLocation.Custom)
@@ -853,6 +1079,9 @@ func (r *edgeLocationResource) Update(ctx context.Context, req resource.UpdateRe
 	case plan.OCI != nil && (!plan.OCI.Equal(state.OCI) || credentialsChanged):
 		updateReq.Oci = r.toOCI(plan.OCI, config.OCI)
 		mc = config.OCI
+	case plan.Nebius != nil && (!plan.Nebius.Equal(state.Nebius) || credentialsChanged):
+		updateReq.Nebius = r.toNebius(plan.Nebius, config.Nebius)
+		mc = config.Nebius
 	case plan.Custom != nil && (!plan.Custom.Equal(state.Custom)):
 		updateReq.Custom = r.toCustom(plan.Custom, config.Custom)
 	}
@@ -962,7 +1191,8 @@ func (r *edgeLocationResource) ModifyPlan(ctx context.Context, req resource.Modi
 		mc = config.GCP
 	case config.OCI != nil:
 		mc = config.OCI
-
+	case config.Nebius != nil:
+		mc = config.Nebius
 	}
 
 	// Skip credentials comparison when no credentials are provided (e.g. impersonation flow)
@@ -1002,21 +1232,28 @@ func (r *edgeLocationResource) ImportState(ctx context.Context, req resource.Imp
 // Returns nil when nothing changed so the field is omitted from the PATCH request.
 func (r *edgeLocationResource) edgeClusterSpecUpdate(ctx context.Context, plan, state edgeLocationModel) (*omni.EdgeClusterSpec, diag.Diagnostics) {
 	var (
-		diags      diag.Diagnostics
-		cpChanged  = !plan.ControlPlane.Equal(state.ControlPlane)
-		netChanged = !plan.Networking.Equal(state.Networking)
-		addonsChg  = !addonsEqual(plan.Addons, state.Addons)
+		diags       diag.Diagnostics
+		cpChanged   = !plan.ControlPlane.Equal(state.ControlPlane)
+		netChanged  = !plan.Networking.Equal(state.Networking)
+		liqoChanged = !plan.Liqo.Equal(state.Liqo)
+		addonsChg   = !addonsEqual(plan.Addons, state.Addons)
 	)
 
-	if !cpChanged && !netChanged && !addonsChg {
+	if !cpChanged && !netChanged && !liqoChanged && !addonsChg {
 		return nil, diags
 	}
 
 	spec := &omni.EdgeClusterSpec{}
 	if cpChanged {
+		// Reset to API defaults when the block was removed: HA defaults to true.
 		spec.ControlPlane = &omni.EdgeClusterControlPlane{Ha: lo.ToPtr(true)}
 		if plan.ControlPlane != nil {
-			spec.ControlPlane.Ha = plan.ControlPlane.Ha.ValueBoolPointer()
+			var d diag.Diagnostics
+			spec.ControlPlane, d = r.toControlPlane(ctx, plan.ControlPlane)
+			diags.Append(d...)
+			if diags.HasError() {
+				return nil, diags
+			}
 		}
 	}
 	if netChanged {
@@ -1031,6 +1268,14 @@ func (r *edgeLocationResource) edgeClusterSpecUpdate(ctx context.Context, plan, 
 			if plan.Networking.CNI != nil {
 				spec.Networking.Cni = r.toCNI(plan.Networking.CNI)
 			}
+		}
+	}
+	if liqoChanged {
+		var d diag.Diagnostics
+		spec.Liqo, d = r.toLiqo(ctx, plan.Liqo)
+		diags.Append(d...)
+		if diags.HasError() {
+			return nil, diags
 		}
 	}
 	if addonsChg {
@@ -1058,16 +1303,99 @@ func (r *edgeLocationResource) toCNI(cni *cniModel) *omni.EdgeClusterCNI {
 	return out
 }
 
-func (r *edgeLocationResource) toEdgeClusterSpec(ctx context.Context, cp *controlPlaneModel, net *networkingModel, addons []addonModel) (*omni.EdgeClusterSpec, diag.Diagnostics) {
+func (r *edgeLocationResource) toLiqo(ctx context.Context, liqo *liqoModel) (*omni.EdgeClusterLiqoSpec, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	if cp == nil && net == nil && addons == nil {
+	if liqo == nil {
+		return nil, diags
+	}
+	out := &omni.EdgeClusterLiqoSpec{}
+	if !liqo.GatewayReplicas.IsNull() && !liqo.GatewayReplicas.IsUnknown() {
+		out.GatewayReplicas = liqo.GatewayReplicas.ValueInt32Pointer()
+	}
+	var d diag.Diagnostics
+	out.GatewayServer, d = r.toGatewayServer(ctx, liqo.GatewayServer)
+	diags.Append(d...)
+	return out, diags
+}
+
+func (r *edgeLocationResource) toGatewayServer(ctx context.Context, gs *gatewayServerModel) (*omni.GatewayServerConfig, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if gs == nil {
+		return nil, diags
+	}
+	out := &omni.GatewayServerConfig{
+		ServiceLabels:      mapStringPtr(ctx, gs.ServiceLabels, &diags),
+		ServiceAnnotations: mapStringPtr(ctx, gs.ServiceAnnotations, &diags),
+	}
+	if !gs.ExternalAddress.IsNull() && !gs.ExternalAddress.IsUnknown() {
+		out.ExternalAddress = gs.ExternalAddress.ValueStringPointer()
+	}
+	if !gs.ExternalPort.IsNull() && !gs.ExternalPort.IsUnknown() {
+		out.ExternalPort = gs.ExternalPort.ValueInt32Pointer()
+	}
+	return out, diags
+}
+
+func (r *edgeLocationResource) toControlPlane(ctx context.Context, cp *controlPlaneModel) (*omni.EdgeClusterControlPlane, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if cp == nil {
+		return nil, diags
+	}
+	out := &omni.EdgeClusterControlPlane{}
+	if !cp.Ha.IsNull() && !cp.Ha.IsUnknown() {
+		out.Ha = cp.Ha.ValueBoolPointer()
+	}
+	if !cp.ExternalAddress.IsNull() && !cp.ExternalAddress.IsUnknown() {
+		out.ExternalAddress = cp.ExternalAddress.ValueStringPointer()
+	}
+	if !cp.APIServerPort.IsNull() && !cp.APIServerPort.IsUnknown() {
+		out.ApiServerPort = cp.APIServerPort.ValueInt32Pointer()
+	}
+	if !cp.KonnectivityPort.IsNull() && !cp.KonnectivityPort.IsUnknown() {
+		out.KonnectivityPort = cp.KonnectivityPort.ValueInt32Pointer()
+	}
+	out.ServiceAnnotations = mapStringPtr(ctx, cp.ServiceAnnotations, &diags)
+	return out, diags
+}
+
+// mapStringPtr converts a Terraform map attribute to a *map[string]string for the SDK,
+// returning nil for null/unknown values and appending any conversion errors to diags.
+func mapStringPtr(ctx context.Context, m types.Map, diags *diag.Diagnostics) *map[string]string {
+	if m.IsNull() || m.IsUnknown() {
+		return nil
+	}
+	var out map[string]string
+	diags.Append(m.ElementsAs(ctx, &out, false)...)
+	if diags.HasError() {
+		return nil
+	}
+	return &out
+}
+
+// stringMapValue converts a *map[string]string from the SDK to a Terraform map attribute,
+// returning a null map when the SDK value is nil.
+func stringMapValue(ctx context.Context, m *map[string]string, diags *diag.Diagnostics) types.Map {
+	if m == nil {
+		return types.MapNull(types.StringType)
+	}
+	v, d := types.MapValueFrom(ctx, types.StringType, *m)
+	diags.Append(d...)
+	return v
+}
+
+func (r *edgeLocationResource) toEdgeClusterSpec(ctx context.Context, cp *controlPlaneModel, net *networkingModel, addons []addonModel, liqo *liqoModel) (*omni.EdgeClusterSpec, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if cp == nil && net == nil && addons == nil && liqo == nil {
 		return nil, diags
 	}
 
 	spec := &omni.EdgeClusterSpec{}
 	if cp != nil {
-		spec.ControlPlane = &omni.EdgeClusterControlPlane{
-			Ha: cp.Ha.ValueBoolPointer(),
+		var d diag.Diagnostics
+		spec.ControlPlane, d = r.toControlPlane(ctx, cp)
+		diags.Append(d...)
+		if diags.HasError() {
+			return nil, diags
 		}
 	}
 
@@ -1082,6 +1410,15 @@ func (r *edgeLocationResource) toEdgeClusterSpec(ctx context.Context, cp *contro
 		}
 		if net.CNI != nil {
 			spec.Networking.Cni = r.toCNI(net.CNI)
+		}
+	}
+
+	if liqo != nil {
+		var d diag.Diagnostics
+		spec.Liqo, d = r.toLiqo(ctx, liqo)
+		diags.Append(d...)
+		if diags.HasError() {
+			return nil, diags
 		}
 	}
 
@@ -1349,6 +1686,7 @@ func (r *edgeLocationResource) toOCI(plan, config *ociModel) *omni.OCIParam {
 			VcnId:           plan.VcnID.ValueString(),
 			SubnetId:        plan.SubnetID.ValueString(),
 			VcnCidr:         plan.VcnCidr.ValueStringPointer(),
+			VcnPeered:       plan.VcnPeered.ValueBoolPointer(),
 			SecurityGroupId: plan.SecurityGroupID.ValueStringPointer(),
 		},
 		Credentials: &omni.OCIParamCredentials{
@@ -1371,6 +1709,7 @@ func (r *edgeLocationResource) toOCIModel(config *omni.OCIParam) *ociModel {
 		CompartmentID:      types.StringValue(lo.FromPtr(config.CompartmentId)),
 		VcnID:              types.StringNull(),
 		VcnCidr:            types.StringNull(),
+		VcnPeered:          types.BoolNull(),
 		SubnetID:           types.StringNull(),
 		SecurityGroupID:    types.StringNull(),
 		UserIDWO:           types.StringNull(),
@@ -1381,6 +1720,7 @@ func (r *edgeLocationResource) toOCIModel(config *omni.OCIParam) *ociModel {
 	if config.Networking != nil {
 		oci.VcnID = types.StringValue(config.Networking.VcnId)
 		oci.SubnetID = types.StringValue(config.Networking.SubnetId)
+		oci.VcnPeered = types.BoolPointerValue(config.Networking.VcnPeered)
 		if config.Networking.VcnCidr != nil && *config.Networking.VcnCidr != "" {
 			oci.VcnCidr = types.StringValue(*config.Networking.VcnCidr)
 		}
@@ -1390,6 +1730,53 @@ func (r *edgeLocationResource) toOCIModel(config *omni.OCIParam) *ociModel {
 	}
 
 	return oci
+}
+
+func (r *edgeLocationResource) toNebius(plan, config *nebiusModel) *omni.NebiusParam {
+	if plan == nil || config == nil {
+		return nil
+	}
+
+	out := &omni.NebiusParam{
+		ParentId:         toPtr(plan.ParentID.ValueString()),
+		ServiceAccountId: toPtr(plan.ServiceAccountID.ValueString()),
+		Networking: &omni.NebiusParamNetworking{
+			NetworkId:       toPtr(plan.NetworkID.ValueString()),
+			SubnetId:        toPtr(plan.SubnetID.ValueString()),
+			SubnetCidr:      plan.SubnetCidr.ValueStringPointer(),
+			SecurityGroupId: plan.SecurityGroupID.ValueStringPointer(),
+		},
+	}
+
+	return out
+}
+
+func (r *edgeLocationResource) toNebiusModel(config *omni.NebiusParam) *nebiusModel {
+	if config == nil {
+		return nil
+	}
+
+	nebius := &nebiusModel{
+		ParentID:         types.StringValue(lo.FromPtr(config.ParentId)),
+		ServiceAccountID: types.StringValue(lo.FromPtr(config.ServiceAccountId)),
+		NetworkID:        types.StringNull(),
+		SubnetID:         types.StringNull(),
+		SubnetCidr:       types.StringNull(),
+		SecurityGroupID:  types.StringNull(),
+	}
+
+	if config.Networking != nil {
+		nebius.NetworkID = types.StringValue(lo.FromPtr(config.Networking.NetworkId))
+		nebius.SubnetID = types.StringValue(lo.FromPtr(config.Networking.SubnetId))
+		if config.Networking.SubnetCidr != nil && *config.Networking.SubnetCidr != "" {
+			nebius.SubnetCidr = types.StringValue(*config.Networking.SubnetCidr)
+		}
+		if config.Networking.SecurityGroupId != nil && *config.Networking.SecurityGroupId != "" {
+			nebius.SecurityGroupID = types.StringValue(*config.Networking.SecurityGroupId)
+		}
+	}
+
+	return nebius
 }
 
 func (r *edgeLocationResource) toCustom(plan, config *customModel) *omni.CustomProviderParam {

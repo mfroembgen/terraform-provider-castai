@@ -4,9 +4,211 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/stretchr/testify/require"
 )
+
+func TestRebalancingSchedule_stateToSchedule_EvictGracefullyAndDrainOptions(t *testing.T) {
+	r := require.New(t)
+	resource := resourceRebalancingSchedule()
+
+	state := terraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+		"name": cty.StringVal("test-schedule"),
+		"schedule": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"cron": cty.StringVal("5 4 * * *"),
+		})}),
+		"trigger_conditions": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"savings_percentage": cty.NumberFloatVal(15),
+			"ignore_savings":     cty.BoolVal(false),
+		})}),
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"evict_gracefully":          cty.BoolVal(true),
+			"keep_drain_timeout_nodes":  cty.BoolVal(true),
+			"max_simultaneous_drains":   cty.NumberIntVal(5),
+			"split_nodes_in_batches_of": cty.NumberIntVal(3),
+			"aggressive_mode_config": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+				"ignore_local_persistent_volumes":        cty.BoolVal(true),
+				"ignore_problem_job_pods":                cty.BoolVal(true),
+				"ignore_problem_removal_disabled_pods":   cty.BoolVal(false),
+				"ignore_problem_pods_without_controller": cty.BoolVal(false),
+				"ignore_problem_prevented_drain_pods":    cty.BoolVal(true),
+			})}),
+		})}),
+	}), 0)
+	// Raw config sets the fields explicitly (aliases set to the same value).
+	state.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"evict_gracefully":          cty.BoolVal(true),
+			"keep_drain_timeout_nodes":  cty.BoolVal(true),
+			"max_simultaneous_drains":   cty.NumberIntVal(5),
+			"split_nodes_in_batches_of": cty.NumberIntVal(3),
+			"aggressive_mode_config": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+				"ignore_problem_prevented_drain_pods": cty.BoolVal(true),
+			})}),
+		})}),
+	})
+
+	schedule, err := stateToSchedule(resource.Data(state))
+	r.NoError(err)
+
+	opts := schedule.LaunchConfiguration.RebalancingOptions
+	r.NotNil(opts)
+	r.NotNil(opts.EvictGracefully)
+	r.True(*opts.EvictGracefully)
+	r.NotNil(opts.MaxSimultaneousDrains)
+	r.Equal(int32(5), *opts.MaxSimultaneousDrains)
+	r.NotNil(opts.SplitNodesInBatchesOf)
+	r.Equal(int32(3), *opts.SplitNodesInBatchesOf)
+	r.NotNil(opts.AggressiveModeConfig)
+	r.NotNil(opts.AggressiveModeConfig.IgnoreProblemPreventedDrainPods)
+	r.True(*opts.AggressiveModeConfig.IgnoreProblemPreventedDrainPods)
+	r.NotNil(opts.KeepDrainTimeoutNodes) //nolint:staticcheck // SA1019
+	r.True(*opts.KeepDrainTimeoutNodes)  //nolint:staticcheck // SA1019
+
+	// Omitted (null) fields must stay nil in the request body.
+	unsetState := terraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+		"name": cty.StringVal("test-schedule-unset"),
+		"schedule": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"cron": cty.StringVal("5 4 * * *"),
+		})}),
+		"trigger_conditions": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"savings_percentage": cty.NumberFloatVal(15),
+			"ignore_savings":     cty.BoolVal(false),
+		})}),
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"aggressive_mode_config": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+				"ignore_local_persistent_volumes":        cty.BoolVal(true),
+				"ignore_problem_job_pods":                cty.BoolVal(true),
+				"ignore_problem_removal_disabled_pods":   cty.BoolVal(false),
+				"ignore_problem_pods_without_controller": cty.BoolVal(false),
+				"ignore_problem_prevented_drain_pods":    cty.NullVal(cty.Bool),
+			})}),
+		})}),
+	}), 0)
+	// Raw config leaves the fields unset (null).
+	unsetState.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"evict_gracefully":          cty.NullVal(cty.Bool),
+			"max_simultaneous_drains":   cty.NullVal(cty.Number),
+			"split_nodes_in_batches_of": cty.NullVal(cty.Number),
+			"aggressive_mode_config": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+				"ignore_problem_prevented_drain_pods": cty.NullVal(cty.Bool),
+			})}),
+		})}),
+	})
+
+	unsetSchedule, err := stateToSchedule(resource.Data(unsetState))
+	r.NoError(err)
+	unsetOpts := unsetSchedule.LaunchConfiguration.RebalancingOptions
+	r.NotNil(unsetOpts)
+	r.NotNil(unsetOpts.AggressiveModeConfig)
+	r.Nil(unsetOpts.AggressiveModeConfig.IgnoreProblemPreventedDrainPods)
+	// Unset optional fields stay nil.
+	r.Nil(unsetOpts.EvictGracefully)
+	r.Nil(unsetOpts.MaxSimultaneousDrains)
+	r.Nil(unsetOpts.SplitNodesInBatchesOf)
+}
+
+func TestRebalancingSchedule_stateToSchedule_TargetedNodesPercentage(t *testing.T) {
+	r := require.New(t)
+	resource := resourceRebalancingSchedule()
+
+	state := terraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+		"name": cty.StringVal("test-schedule-percentage"),
+		"schedule": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"cron": cty.StringVal("5 4 * * *"),
+		})}),
+		"trigger_conditions": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"savings_percentage": cty.NumberFloatVal(15),
+			"ignore_savings":     cty.BoolVal(false),
+		})}),
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"targeted_nodes_percentage": cty.NumberIntVal(50),
+		})}),
+	}), 0)
+	state.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"targeted_nodes_percentage": cty.NumberIntVal(50),
+		})}),
+	})
+
+	schedule, err := stateToSchedule(resource.Data(state))
+	r.NoError(err)
+
+	r.NotNil(schedule.LaunchConfiguration.TargetedNodesPercentage)
+	r.Equal(int32(50), *schedule.LaunchConfiguration.TargetedNodesPercentage)
+	// The provider always sends the count (0 = unlimited when unset); the API
+	// rejects a count > 0 combined with a percentage.
+	if schedule.LaunchConfiguration.NumTargetedNodes != nil {
+		r.Equal(int32(0), *schedule.LaunchConfiguration.NumTargetedNodes)
+	}
+
+	// Omitted percentage must stay nil and not affect the fixed count.
+	countState := terraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+		"name": cty.StringVal("test-schedule-count"),
+		"schedule": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"cron": cty.StringVal("5 4 * * *"),
+		})}),
+		"trigger_conditions": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"savings_percentage": cty.NumberFloatVal(15),
+			"ignore_savings":     cty.BoolVal(false),
+		})}),
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"num_targeted_nodes": cty.NumberIntVal(5),
+		})}),
+	}), 0)
+	countState.RawConfig = cty.ObjectVal(map[string]cty.Value{
+		"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+			"num_targeted_nodes": cty.NumberIntVal(5),
+		})}),
+	})
+
+	countSchedule, err := stateToSchedule(resource.Data(countState))
+	r.NoError(err)
+
+	r.Nil(countSchedule.LaunchConfiguration.TargetedNodesPercentage)
+	r.NotNil(countSchedule.LaunchConfiguration.NumTargetedNodes)
+	r.Equal(int32(5), *countSchedule.LaunchConfiguration.NumTargetedNodes)
+}
+
+func TestRebalancingSchedule_validateDrainOptionsAlias(t *testing.T) {
+	r := require.New(t)
+
+	launchConfig := func(keep, evict interface{}) []interface{} {
+		return []interface{}{map[string]interface{}{
+			"keep_drain_timeout_nodes": keep,
+			"evict_gracefully":         evict,
+		}}
+	}
+	rawConfig := func(keep, evict cty.Value) cty.Value {
+		return cty.ObjectVal(map[string]cty.Value{
+			"launch_configuration": cty.ListVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{
+				"keep_drain_timeout_nodes": keep,
+				"evict_gracefully":         evict,
+			})}),
+		})
+	}
+
+	// Only the deprecated field set: allowed.
+	r.NoError(validateDrainOptionsAlias(
+		rawConfig(cty.BoolVal(true), cty.NullVal(cty.Bool)), launchConfig(true, false)))
+	// Only the replacement set: allowed.
+	r.NoError(validateDrainOptionsAlias(
+		rawConfig(cty.NullVal(cty.Bool), cty.BoolVal(false)), launchConfig(false, false)))
+	// Neither set: allowed.
+	r.NoError(validateDrainOptionsAlias(
+		rawConfig(cty.NullVal(cty.Bool), cty.NullVal(cty.Bool)), launchConfig(false, false)))
+	// Both set to the same value: allowed during migration.
+	r.NoError(validateDrainOptionsAlias(
+		rawConfig(cty.BoolVal(true), cty.BoolVal(true)), launchConfig(true, true)))
+	// Both set with conflicting values: rejected at plan time.
+	err := validateDrainOptionsAlias(
+		rawConfig(cty.BoolVal(true), cty.BoolVal(false)), launchConfig(true, false))
+	r.ErrorContains(err, "conflicting values")
+}
 
 func TestAccCloudAgnostic_ResourceRebalancingSchedule_basic(t *testing.T) {
 	rName := fmt.Sprintf("%v-rebalancing-schedule-%v", ResourcePrefix, acctest.RandString(8))
@@ -34,6 +236,7 @@ func TestAccCloudAgnostic_ResourceRebalancingSchedule_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.aggressive_mode_config.0.ignore_problem_job_pods", "true"),
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.aggressive_mode_config.0.ignore_problem_removal_disabled_pods", "true"),
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.aggressive_mode_config.0.ignore_problem_pods_without_controller", "true"),
+					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.split_nodes_in_batches_of", "2"),
 				),
 			},
 			{
@@ -47,7 +250,7 @@ func TestAccCloudAgnostic_ResourceRebalancingSchedule_basic(t *testing.T) {
 				Config: makeConfigWithDrainFailureConfig(rName + " drain_failure"),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "name", rName+" drain_failure"),
-					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.keep_drain_timeout_nodes", "true"),
+					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.evict_gracefully", "true"),
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.drain_failure_config.0.disable_uncordon", "false"),
 					resource.TestCheckResourceAttr("castai_rebalancing_schedule.test", "launch_configuration.0.drain_failure_config.0.uncordon_after_seconds", "7200"),
 				),
@@ -109,13 +312,15 @@ resource "castai_rebalancing_schedule" "test" {
 		node_ttl_seconds = 10
 		num_targeted_nodes = 3
 		rebalancing_min_nodes = 2
-		keep_drain_timeout_nodes = true
+		evict_gracefully = true
+		split_nodes_in_batches_of = 2
 		aggressive_mode = true
 		aggressive_mode_config {
       		ignore_local_persistent_volumes = true
       		ignore_problem_job_pods = true
       		ignore_problem_removal_disabled_pods = true
       		ignore_problem_pods_without_controller = true
+      		ignore_problem_prevented_drain_pods = true
     	}
 		selector = jsonencode({
 			nodeSelectorTerms = [{

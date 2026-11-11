@@ -4,15 +4,33 @@ on:
 permissions:
   contents: read
 jobs:
+  files-changed:
+    name: detect files changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      go-lint: ${{ steps.changes.outputs.go-lint }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - name: Check for file changes
+        uses: dorny/paths-filter@v4.0.3
+        id: changes
+        with:
+          token: ${{ github.token }}
+          filters: .github/file-filters.yml
   golangci:
+    needs: files-changed
+    if: needs.files-changed.outputs.go-lint == 'true'
     name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-go@v6
         with:
-          go-version: 1.25.5
+          go-version: 1.25.8
       - uses: actions/checkout@v6
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          version: v2.13.1
           args: --timeout=5m

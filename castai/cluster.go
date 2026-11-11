@@ -25,15 +25,25 @@ const (
 )
 
 func resourceCastaiClusterDelete(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderConfig).api
+	return clusterDelete(ctx, data, meta.(*ProviderConfig).api, nil)
+}
+
+// clusterDelete disconnects and deletes the cluster. prefetched, when non-nil,
+// replaces the first status fetch inside the retry loop to avoid a redundant GET.
+func clusterDelete(ctx context.Context, data *schema.ResourceData, client sdk.ClientWithResponsesInterface, prefetched *sdk.ExternalClusterAPIGetClusterResponse) diag.Diagnostics {
 	clusterId := data.Id()
 
 	log.Printf("[INFO] Checking current status of the cluster.")
 
 	err := retry.RetryContext(ctx, data.Timeout(schema.TimeoutDelete), func() *retry.RetryError {
-		clusterResponse, err := client.ExternalClusterAPIGetClusterWithResponse(ctx, clusterId)
-		if checkErr := sdk.CheckOKResponse(clusterResponse, err); checkErr != nil {
-			return retry.NonRetryableError(err)
+		clusterResponse := prefetched
+		prefetched = nil
+		if clusterResponse == nil {
+			resp, err := client.ExternalClusterAPIGetClusterWithResponse(ctx, clusterId)
+			if checkErr := sdk.CheckOKResponse(resp, err); checkErr != nil {
+				return retry.NonRetryableError(checkErr)
+			}
+			clusterResponse = resp
 		}
 
 		clusterStatus := *clusterResponse.JSON200.Status
@@ -52,7 +62,7 @@ func resourceCastaiClusterDelete(ctx context.Context, data *schema.ResourceData,
 				KeepKubernetesResources: toPtr(true),
 			})
 			if checkErr := sdk.CheckOKResponse(response, err); checkErr != nil {
-				return retry.NonRetryableError(err)
+				return retry.NonRetryableError(checkErr)
 			}
 
 			return retry.RetryableError(fmt.Errorf("triggered agent disconnection cluster status %s agent status %s", clusterStatus, agentStatus))
@@ -66,7 +76,7 @@ func resourceCastaiClusterDelete(ctx context.Context, data *schema.ResourceData,
 			}
 
 			if checkErr := sdk.CheckResponseNoContent(res, err); checkErr != nil {
-				return retry.NonRetryableError(fmt.Errorf("error when deleting cluster status %s agent status %s error: %w", clusterStatus, agentStatus, err))
+				return retry.NonRetryableError(fmt.Errorf("error when deleting cluster status %s agent status %s error: %w", clusterStatus, agentStatus, checkErr))
 			}
 			return retry.RetryableError(fmt.Errorf("triggered cluster deletion"))
 		}

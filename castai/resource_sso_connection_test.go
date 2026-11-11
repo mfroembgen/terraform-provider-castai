@@ -3,6 +3,7 @@ package castai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/golang/mock/gomock"
 	"github.com/hashicorp/go-cty/cty"
@@ -29,17 +32,67 @@ func TestAccCloudAgnostic_ResourceSSOConnection(t *testing.T) {
 	rName := fmt.Sprintf("%v-sso-connection-%v", ResourcePrefix, acctest.RandString(8))
 	resourceName := "castai_sso_connection.test"
 
+	// Non-secret identifiers of the "terraform-provider-acc-sso" Azure AD app;
+	// its client secret is the only sensitive value and is stored in onyx.
 	clientID := os.Getenv("SSO_CLIENT_ID")
+	if clientID == "" {
+		clientID = "324aec6c-bf7e-43a8-86e2-76ca5efaf891"
+	}
 	clientSecret := os.Getenv("SSO_CLIENT_SECRET")
 	domain := os.Getenv("SSO_DOMAIN")
+	if domain == "" {
+		domain = "cast.ai"
+	}
+	enterpriseToken := os.Getenv("CASTAI_ENTERPRISE_API_TOKEN")
+
+	var enterpriseClient *sdk.ClientWithResponses
+
+	t.Cleanup(func() {
+		if enterpriseClient == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := sweepSSOConnection(ctx, enterpriseClient); err != nil {
+			t.Logf("warning: failed to sweep SSO connection after test: %v", err)
+		}
+	})
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: providerFactories,
-		CheckDestroy:      testAccSSOConnectionConfigurationDestroy,
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if clientSecret == "" {
+				t.Skipf("missing required env var: SSO_CLIENT_SECRET")
+			}
+			// The SSO API requires an enterprise organisation; CASTAI_API_TOKEN belongs to the standard acceptance test org.
+			if enterpriseToken == "" {
+				t.Skipf("missing required env var: CASTAI_ENTERPRISE_API_TOKEN")
+			}
+
+			client, err := sdk.CreateClient(os.Getenv("CASTAI_API_URL"), enterpriseToken, "castai-terraform-provider-acc-test")
+			if err != nil {
+				t.Fatalf("failed to create enterprise API client: %v", err)
+			}
+			enterpriseClient = client
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := sweepSSOConnection(ctx, enterpriseClient); err != nil {
+				t.Logf("warning: failed to sweep SSO connection before test: %v", err)
+			}
+		},
+		// Fresh provider instances: the enterprise token in the config must not reconfigure the shared testAccProvider used by parallel tests.
+		ProviderFactories: map[string]func() (*schema.Provider, error){
+			ProviderName: func() (*schema.Provider, error) {
+				return Provider("v1.0.0"), nil
+			},
+		},
+		CheckDestroy: func(s *terraform.State) error {
+			return testAccSSOConnectionConfigurationDestroy(enterpriseClient, s)
+		},
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCreateSSOConnectionConfig(rName, clientID, clientSecret, domain),
+				Config: testAccCreateSSOConnectionConfig(rName, enterpriseToken, clientID, clientSecret, domain),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "name", rName),
 					resource.TestCheckResourceAttr(resourceName, "email_domain", "aad_connection@test.com"),
@@ -50,6 +103,31 @@ func TestAccCloudAgnostic_ResourceSSOConnection(t *testing.T) {
 			},
 		},
 	})
+}
+
+// sweepSSOConnection lists SSO connections and deletes the first one found.
+// The acceptance test org enforces a quota of 1 SSO connection, so at most one
+// can exist. Any connection present before the test runs is stale from a
+// previous run and is removed to avoid exhausting the quota.
+func sweepSSOConnection(ctx context.Context, client sdk.ClientWithResponsesInterface) error {
+	resp, err := client.SSOAPIListSSOConnectionsWithResponse(ctx)
+	if err := sdk.CheckOKResponse(resp, err); err != nil {
+		return err
+	}
+	if resp.JSON200 == nil || len(resp.JSON200.Connections) == 0 {
+		return nil
+	}
+
+	conn := resp.JSON200.Connections[0]
+	if conn.Id == nil {
+		return fmt.Errorf("sso connection has nil id")
+	}
+
+	delResp, err := client.SSOAPIDeleteSSOConnectionWithResponse(ctx, *conn.Id)
+	if err := sdk.CheckOKResponse(delResp, err); err != nil {
+		return err
+	}
+	return nil
 }
 
 func TestSSOConnection_ReadContext(t *testing.T) {
@@ -129,7 +207,7 @@ func TestSSOConnection_CreateADDConnector(t *testing.T) {
 
 		mockClient.EXPECT().
 			SSOAPICreateSSOConnection(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody) (*http.Response, error) {
+			DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				got, err := json.Marshal(body)
 				r.NoError(err)
 
@@ -207,7 +285,7 @@ func TestSSOConnection_CreateADDConnector(t *testing.T) {
 
 		mockClient.EXPECT().
 			SSOAPICreateSSOConnection(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody) (*http.Response, error) {
+			DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				got, err := json.Marshal(body)
 				r.NoError(err)
 
@@ -289,7 +367,7 @@ func TestSSOConnection_CreateOktaConnector(t *testing.T) {
 
 	mockClient.EXPECT().
 		SSOAPICreateSSOConnection(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody) (*http.Response, error) {
+		DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 			got, err := json.Marshal(body)
 			r.NoError(err)
 
@@ -388,7 +466,7 @@ func TestSSOConnection_UpdateADDConnector(t *testing.T) {
 		}))
 
 		mockClient.EXPECT().SSOAPIUpdateSSOConnection(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody) (*http.Response, error) {
+			DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				got, err := json.Marshal(body)
 				r.NoError(err)
 
@@ -476,7 +554,7 @@ func TestSSOConnection_UpdateADDConnector(t *testing.T) {
 		r.NoError(data.Set(FieldSSOConnectionAdditionalEmailDomains, []interface{}{"updated_domain_one", "updated_domain_two"}))
 
 		mockClient.EXPECT().SSOAPIUpdateSSOConnection(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody) (*http.Response, error) {
+			DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 				got, err := json.Marshal(body)
 				r.NoError(err)
 
@@ -568,7 +646,7 @@ func TestSSOConnection_UpdateOktaConnector(t *testing.T) {
 	}))
 
 	mockClient.EXPECT().SSOAPIUpdateSSOConnection(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody) (*http.Response, error) {
+		DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
 			got, err := json.Marshal(body)
 			r.NoError(err)
 
@@ -917,24 +995,27 @@ func TestSSOConnection_ReadContext_IsSynced(t *testing.T) {
 	})
 }
 
-func testAccCreateSSOConnectionConfig(rName, clientID, clientSecret, adDomain string) string {
+func testAccCreateSSOConnectionConfig(rName, apiToken, clientID, clientSecret, adDomain string) string {
 	return fmt.Sprintf(`
+provider "castai" {
+  api_token = %[2]q
+}
+
 resource "castai_sso_connection" "test" {
   name            = %[1]q
   email_domain = "aad_connection@test.com"
   aad {
-    client_id     = %[2]q
-    client_secret = %[3]q
-    ad_domain     = %[4]q
+    client_id     = %[3]q
+    client_secret = %[4]q
+    ad_domain     = %[5]q
   }
-}`, rName, clientID, clientSecret, adDomain)
+}`, rName, apiToken, clientID, clientSecret, adDomain)
 }
 
-func testAccSSOConnectionConfigurationDestroy(s *terraform.State) error {
+func testAccSSOConnectionConfigurationDestroy(client sdk.ClientWithResponsesInterface, s *terraform.State) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client := testAccProvider.Meta().(*ProviderConfig).api
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "castai_sso_connection" {
 			continue
@@ -953,6 +1034,326 @@ func testAccSSOConnectionConfigurationDestroy(s *terraform.State) error {
 	}
 
 	return nil
+}
+
+func TestSSOConnection_CreateOIDCConnector(t *testing.T) {
+	r := require.New(t)
+	mockClient := mock_sdk.NewMockClientInterface(gomock.NewController(t))
+
+	mockClient.EXPECT().
+		SSOAPICreateSSOConnection(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, body sdk.SSOAPICreateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			got, err := json.Marshal(body)
+			r.NoError(err)
+
+			expected := []byte(`{
+  "oidc": {
+    "issuerUrl": "https://keycloak.example.com/realms/master",
+    "clientId": "test_client",
+    "clientSecret": "test_secret",
+    "type": "TYPE_BACK_CHANNEL"
+  },
+  "emailDomain": "test_email",
+  "defaultRoleId": null,
+  "name": "test_sso"
+}`)
+
+			equal, err := JSONBytesEqual(got, expected)
+			r.NoError(err)
+			r.True(equal, fmt.Sprintf("got:      %v\n"+
+				"expected: %v\n", string(got), string(expected)))
+
+			return &http.Response{
+				StatusCode: 200,
+				Header:     map[string][]string{"Content-Type": {"json"}},
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"id": "b6bfc074-a267-400f-b8f1-db0850c369b1", "status": "STATUS_ACTIVE"}`))),
+			}, nil
+		})
+
+	connectionID := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+	readBody := io.NopCloser(bytes.NewReader([]byte(`{"connection":{
+  "id": "b6bfc074-a267-400f-b8f1-db0850c369b1",
+  "name": "test_sso",
+  "createdAt": "2023-11-02T10:49:14.376757Z",
+  "updatedAt": "2023-11-02T10:49:14.450828Z",
+  "emailDomain": "test_email",
+  "oidc": {
+    "issuerUrl": "https://keycloak.example.com/realms/master",
+    "clientId": "test_client",
+    "clientSecret": "test_secret",
+    "type": "TYPE_BACK_CHANNEL"
+  }
+}}`)))
+
+	mockClient.EXPECT().
+		SSOAPIGetSSOConnection(gomock.Any(), connectionID).
+		Return(&http.Response{StatusCode: 200, Body: readBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	resource := resourceSSOConnection()
+	data := resource.Data(sdkterraform.NewInstanceStateShimmedFromValue(cty.ObjectVal(map[string]cty.Value{
+		FieldSSOConnectionName:        cty.StringVal("test_sso"),
+		FieldSSOConnectionEmailDomain: cty.StringVal("test_email"),
+		FieldSSOConnectionOIDC: cty.ListVal([]cty.Value{
+			cty.ObjectVal(map[string]cty.Value{
+				FieldSSOConnectionOIDCIssuerURL:    cty.StringVal("https://keycloak.example.com/realms/master"),
+				FieldSSOConnectionOIDCClientID:     cty.StringVal("test_client"),
+				FieldSSOConnectionOIDCClientSecret: cty.StringVal("test_secret"),
+				FieldSSOConnectionOIDCType:         cty.StringVal("TYPE_BACK_CHANNEL"),
+			}),
+		}),
+	}), 0))
+
+	result := resource.CreateContext(context.Background(), data, &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	})
+
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Equal("test_sso", data.Get(FieldSSOConnectionName))
+	r.Equal("test_email", data.Get(FieldSSOConnectionEmailDomain))
+	equalOIDCConnector(t, r, data.Get(FieldSSOConnectionOIDC), "https://keycloak.example.com/realms/master", "test_client", "test_secret", "TYPE_BACK_CHANNEL")
+}
+
+func TestSSOConnection_UpdateOIDCConnector(t *testing.T) {
+	r := require.New(t)
+	mockClient := mock_sdk.NewMockClientInterface(gomock.NewController(t))
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+	connectionID := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+
+	raw := make(map[string]interface{})
+	raw[FieldSSOConnectionName] = "updated_name"
+
+	resource := resourceSSOConnection()
+	data := schema.TestResourceDataRaw(t, resource.Schema, raw)
+	data.SetId(connectionID)
+	r.NoError(data.Set(FieldSSOConnectionOIDC, []map[string]interface{}{
+		{
+			FieldSSOConnectionOIDCIssuerURL:    "https://keycloak.example.com/realms/updated",
+			FieldSSOConnectionOIDCClientID:     "updated_client_id",
+			FieldSSOConnectionOIDCClientSecret: "updated_client_secret",
+			FieldSSOConnectionOIDCType:         "TYPE_FRONT_CHANNEL",
+		},
+	}))
+
+	mockClient.EXPECT().SSOAPIUpdateSSOConnection(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			got, err := json.Marshal(body)
+			r.NoError(err)
+
+			expected := []byte(`{
+  "oidc": {
+    "issuerUrl": "https://keycloak.example.com/realms/updated",
+    "clientId": "updated_client_id",
+    "clientSecret": "updated_client_secret",
+    "type": "TYPE_FRONT_CHANNEL"
+  },
+  "defaultRoleId": null,
+  "name": "updated_name"
+}`)
+
+			eq, err := JSONBytesEqual(got, expected)
+			r.NoError(err)
+			r.True(eq, fmt.Sprintf("got:      %v\n"+
+				"expected: %v\n", string(got), string(expected)))
+
+			returnBody := []byte(`{
+  "oidc": {
+    "issuerUrl": "https://keycloak.example.com/realms/updated",
+    "clientId": "updated_client_id",
+    "clientSecret": "updated_client_secret",
+    "type": "TYPE_FRONT_CHANNEL"
+  },
+  "status": "STATUS_ACTIVE",
+  "name": "updated_name"
+}`)
+
+			return &http.Response{
+				StatusCode: 200,
+				Header:     map[string][]string{"Content-Type": {"json"}},
+				Body:       io.NopCloser(bytes.NewReader(returnBody)),
+			}, nil
+		}).Times(1)
+
+	readBody := io.NopCloser(bytes.NewReader([]byte(`{"connection":{
+  "id": "b6bfc074-a267-400f-b8f1-db0850c369b1",
+  "name": "updated_name",
+  "createdAt": "2023-11-02T10:49:14.376757Z",
+  "updatedAt": "2023-11-02T10:49:14.450828Z",
+  "emailDomain": "test_email",
+  "oidc": {
+    "issuerUrl": "https://keycloak.example.com/realms/updated",
+    "clientId": "updated_client_id",
+    "clientSecret": "updated_client_secret",
+    "type": "TYPE_FRONT_CHANNEL"
+  }
+}}`)))
+	mockClient.EXPECT().
+		SSOAPIGetSSOConnection(gomock.Any(), connectionID).
+		Return(&http.Response{StatusCode: 200, Body: readBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	updateResult := resource.UpdateContext(ctx, data, provider)
+	r.Nil(updateResult)
+	r.False(updateResult.HasError())
+	r.Equal("updated_name", data.Get(FieldSSOConnectionName))
+	equalOIDCConnector(t, r, data.Get(FieldSSOConnectionOIDC), "https://keycloak.example.com/realms/updated", "updated_client_id", "updated_client_secret", "TYPE_FRONT_CHANNEL")
+}
+
+func TestSSOConnection_OIDCSecretDiffSuppress(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	// Get the DiffSuppressFunc from the schema definition.
+	res := resourceSSOConnection()
+	suppress := res.Schema[FieldSSOConnectionOIDC].Elem.(*schema.Resource).Schema[FieldSSOConnectionOIDCClientSecret].DiffSuppressFunc
+
+	// Simulate a read response: backend returns base64(bcrypt(secret)).
+	plaintext := "super-secret"
+	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.MinCost)
+	r.NoError(err)
+	encoded := base64.StdEncoding.EncodeToString(hash)
+
+	// Same plaintext as stored hash → suppress diff.
+	r.True(suppress(FieldSSOConnectionOIDCClientSecret, encoded, plaintext, nil))
+	// Different plaintext → do not suppress.
+	r.False(suppress(FieldSSOConnectionOIDCClientSecret, encoded, "wrong-secret", nil))
+	// Invalid base64 (e.g. first apply before any read) → do not suppress.
+	r.False(suppress(FieldSSOConnectionOIDCClientSecret, "not-valid-base64!!", plaintext, nil))
+}
+
+func TestSSOConnection_ConnectorMutualExclusivity(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	makeGetter := func(fields map[string][]any) func(string) interface{} {
+		return func(key string) interface{} {
+			if v, ok := fields[key]; ok {
+				return v
+			}
+			return []any{}
+		}
+	}
+
+	// Exactly one connector → valid.
+	r.Equal(1, countSSOConnectors(makeGetter(map[string][]any{
+		FieldSSOConnectionOIDC: {map[string]any{}},
+	})))
+	r.Equal(1, countSSOConnectors(makeGetter(map[string][]any{
+		FieldSSOConnectionAAD: {map[string]any{}},
+	})))
+
+	// Two connectors → invalid.
+	r.Equal(2, countSSOConnectors(makeGetter(map[string][]any{
+		FieldSSOConnectionOIDC: {map[string]any{}},
+		FieldSSOConnectionAAD:  {map[string]any{}},
+	})))
+
+	// Zero connectors → invalid.
+	r.Equal(0, countSSOConnectors(makeGetter(map[string][]any{})))
+}
+
+func TestSSOConnection_UpdateOIDCToAADConnector(t *testing.T) {
+	r := require.New(t)
+	mockClient := mock_sdk.NewMockClientInterface(gomock.NewController(t))
+
+	ctx := context.Background()
+	provider := &ProviderConfig{
+		api: &sdk.ClientWithResponses{
+			ClientInterface: mockClient,
+		},
+	}
+	connectionID := "b6bfc074-a267-400f-b8f1-db0850c369b1"
+
+	raw := make(map[string]interface{})
+	raw[FieldSSOConnectionName] = "updated_name"
+
+	resource := resourceSSOConnection()
+	data := schema.TestResourceDataRaw(t, resource.Schema, raw)
+	data.SetId(connectionID)
+	// Switch: remove OIDC, add AAD.
+	r.NoError(data.Set(FieldSSOConnectionAAD, []map[string]interface{}{
+		{
+			FieldSSOConnectionADDomain:       "new-ad-domain",
+			FieldSSOConnectionADClientID:     "new-client-id",
+			FieldSSOConnectionADClientSecret: "new-client-secret",
+		},
+	}))
+
+	mockClient.EXPECT().SSOAPIUpdateSSOConnection(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, body sdk.SSOAPIUpdateSSOConnectionJSONRequestBody, _ ...sdk.RequestEditorFn) (*http.Response, error) {
+			got, err := json.Marshal(body)
+			r.NoError(err)
+
+			expected := []byte(`{
+  "aad": {
+    "adDomain": "new-ad-domain",
+    "clientId": "new-client-id",
+    "clientSecret": "new-client-secret"
+  },
+  "defaultRoleId": null,
+  "name": "updated_name"
+}`)
+			eq, err := JSONBytesEqual(got, expected)
+			r.NoError(err)
+			r.True(eq, fmt.Sprintf("got:      %v\nexpected: %v\n", string(got), string(expected)))
+
+			return &http.Response{
+				StatusCode: 200,
+				Header:     map[string][]string{"Content-Type": {"json"}},
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"status":"STATUS_ACTIVE","name":"updated_name"}`))),
+			}, nil
+		}).Times(1)
+
+	readBody := io.NopCloser(bytes.NewReader([]byte(`{"connection":{
+  "id": "b6bfc074-a267-400f-b8f1-db0850c369b1",
+  "name": "updated_name",
+  "emailDomain": "test_email",
+  "aad": {
+    "adDomain": "new-ad-domain",
+    "clientId": "new-client-id",
+    "clientSecret": "new-client-secret"
+  }
+}}`)))
+	mockClient.EXPECT().
+		SSOAPIGetSSOConnection(gomock.Any(), connectionID).
+		Return(&http.Response{StatusCode: 200, Body: readBody, Header: map[string][]string{"Content-Type": {"json"}}}, nil)
+
+	result := resource.UpdateContext(ctx, data, provider)
+	r.Nil(result)
+	r.False(result.HasError())
+	r.Empty(data.Get(FieldSSOConnectionOIDC))
+	equalADConnector(t, r, data.Get(FieldSSOConnectionAAD), "new-ad-domain", "new-client-id", "new-client-secret")
+}
+
+func equalOIDCConnector(t *testing.T, r *require.Assertions, in interface{}, expectedIssuerURL, expectedClientID, expectedClientSecret, expectedType string) {
+	t.Helper()
+	r.NotNil(in)
+
+	array, ok := in.([]interface{})
+	r.True(ok)
+	r.Len(array, 1)
+	values, ok := array[0].(map[string]interface{})
+	r.True(ok)
+
+	issuerURL, ok := values["issuer_url"]
+	r.True(ok)
+	r.Equal(expectedIssuerURL, issuerURL)
+	clientID, ok := values["client_id"]
+	r.True(ok)
+	r.Equal(expectedClientID, clientID)
+	clientSecret, ok := values["client_secret"]
+	r.True(ok)
+	r.Equal(expectedClientSecret, clientSecret)
+	oidcType, ok := values["type"]
+	r.True(ok)
+	r.Equal(expectedType, oidcType)
 }
 
 func equalOktaConnector(t *testing.T, r *require.Assertions, in interface{}, expectedDomain, expectedClientID, expectedClientSecret string) {

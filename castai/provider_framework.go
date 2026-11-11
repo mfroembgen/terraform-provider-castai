@@ -14,8 +14,10 @@ import (
 	"github.com/castai/terraform-provider-castai/castai/sdk"
 	"github.com/castai/terraform-provider-castai/castai/sdk/ai_optimizer"
 	"github.com/castai/terraform-provider-castai/castai/sdk/cluster_autoscaler"
+	"github.com/castai/terraform-provider-castai/castai/sdk/cluster_autoscaler_v2"
 	omnisdk "github.com/castai/terraform-provider-castai/castai/sdk/omni"
 	"github.com/castai/terraform-provider-castai/castai/sdk/organization_management"
+	"github.com/castai/terraform-provider-castai/castai/sdk/pricing"
 )
 
 var _ tfprovider.Provider = (*frameworkProvider)(nil)
@@ -107,6 +109,12 @@ func (p *frameworkProvider) Configure(ctx context.Context, req tfprovider.Config
 		return
 	}
 
+	clusterAutoscalerV2Client, err := cluster_autoscaler_v2.CreateClient(apiURL, apiToken, agent)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to create cluster autoscaler V2 client", err.Error())
+		return
+	}
+
 	organizationManagementClient, err := organization_management.CreateClient(apiURL, apiToken, agent)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create organization management client", err.Error())
@@ -125,6 +133,12 @@ func (p *frameworkProvider) Configure(ctx context.Context, req tfprovider.Config
 		return
 	}
 
+	pricingClient, err := pricing.CreateClient(apiURL, apiToken, agent)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to create pricing client", err.Error())
+		return
+	}
+
 	organizationID := config.OrganizationID.ValueString()
 	if organizationID == "" {
 		organizationID = os.Getenv("CASTAI_ORGANIZATION_ID")
@@ -133,9 +147,11 @@ func (p *frameworkProvider) Configure(ctx context.Context, req tfprovider.Config
 	providerConfig := &ProviderConfig{
 		api:                          client,
 		clusterAutoscalerClient:      clusterAutoscalerClient,
+		clusterAutoscalerV2Client:    clusterAutoscalerV2Client,
 		organizationManagementClient: organizationManagementClient,
 		omniAPI:                      omniClient,
 		aiOptimizerClient:            aiOptimizerClient,
+		pricingClient:                pricingClient,
 		organizationID:               organizationID,
 	}
 
@@ -149,6 +165,8 @@ func (p *frameworkProvider) Resources(_ context.Context) []func() resource.Resou
 		newOmniClusterResource,
 		newEdgeConfigurationResource,
 		newEdgeConfigurationDefaultResource,
+		newCommitmentResource,
+		newAutoscalerPoliciesResource,
 	}
 }
 
