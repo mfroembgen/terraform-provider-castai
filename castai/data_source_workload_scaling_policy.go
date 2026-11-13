@@ -23,7 +23,9 @@ func dataSourceWorkloadScalingPolicy() *schema.Resource {
 		ReadContext: dataSourceWorkloadScalingPolicyRead,
 		Description: "Fetches a single workload scaling policy by id or name, including system (read-only) " +
 			"policies. Returns the full policy definition, which can be used as a template for defining " +
-			"custom policies without keeping policy definitions as static code.",
+			"custom policies without keeping policy definitions as static code. " +
+			"Native HPA settings support RESOURCE metrics with UTILIZATION targets only; reading a policy " +
+			"with other HPA metrics or targets returns an error to avoid discarding configuration.",
 		Schema: workloadScalingPolicyDataSourceSchema(),
 	}
 }
