@@ -1,0 +1,81 @@
+name: Fork Release
+
+on:
+  push:
+    branches: ['release/v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'mfroembgen/terraform-provider-castai'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Resolve upstream release
+        id: release
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag=${RELEASE_BRANCH#release/}
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch https://github.com/castai/terraform-provider-castai.git "refs/tags/$tag"
+          upstream_sha=$(git rev-parse 'FETCH_HEAD^{commit}')
+          git merge-base --is-ancestor "$upstream_sha" HEAD
+          git fetch https://github.com/castai/terraform-provider-castai.git master
+          [[ $(git merge-base HEAD FETCH_HEAD) == "$upstream_sha" ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+      - name: Test committed source
+        run: go test $(go list ./... | grep -v vendor/ | grep -v e2e) -timeout=1m -parallel=4
+      - name: Build Linux provider archives
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            binary="terraform-provider-castai_v$VERSION"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags="-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA" \
+              -o "dist/$binary" .
+            (cd dist && zip -X "terraform-provider-castai_${VERSION}_linux_${arch}.zip" "$binary")
+            rm "dist/$binary"
+          done
+      - name: Record source provenance
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          UPSTREAM_SHA: ${{ steps.release.outputs.upstream_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          provenance = {
+              'version': os.environ['VERSION'],
+              'source_repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'upstream_tag': os.environ['TAG'],
+              'upstream_commit': os.environ['UPSTREAM_SHA'],
+              'go_version': subprocess.check_output(['go', 'version'], text=True).strip(),
+              'workflow_run': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }
+          pathlib.Path('dist/provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+          PY
+          (cd dist && sha256sum *.zip provenance.json > "terraform-provider-castai_${VERSION}_SHA256SUMS")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-release
+          path: dist/
+          if-no-files-found: error

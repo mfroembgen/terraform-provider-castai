@@ -14,7 +14,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
       - name: Check for file changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v4.0.3
         id: changes
         with:
           token: ${{ github.token }}
@@ -42,4 +42,4 @@ jobs:
             ${{ runner.os }}-build-
 
       - name: Test
-        run: make test
+        run: go test $(go list ./... | grep -v vendor/ | grep -v e2e) -timeout=1m -parallel=4
