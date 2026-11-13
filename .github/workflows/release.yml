@@ -12,6 +12,7 @@ on:
 
 jobs:
   goreleaser:
+    if: github.repository == 'castai/terraform-provider-castai'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

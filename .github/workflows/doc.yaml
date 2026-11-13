@@ -14,14 +14,14 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
       - name: Check for file changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v4.0.3
         id: changes
         with:
           token: ${{ github.token }}
           filters: .github/file-filters.yml
   generate-sdk:
     needs: files-changed
-    if: needs.files-changed.outputs.generate-sdk == 'true'
+    if: github.repository == 'castai/terraform-provider-castai' && needs.files-changed.outputs.generate-sdk == 'true'
     name: Check if SDK is up to date
     runs-on: ubuntu-latest
     steps:
